@@ -349,14 +349,21 @@ await check('createInput отдаёт рабочий контракт', () => {
 });
 
 await check('select в не-TTY отказывает, а не подтверждает', async () => {
-  // без TTY выбрать нечем: подтверждение опасного действия должно быть «нет»
-  const one = await mods.select.select({ title: 'x', options: [{ label: 'Разрешить' }, { label: 'Отклонить' }], theme: plain });
-  if (one !== -1) throw new Error('одиночный выбор вернул ' + one + ' (ждём -1)');
-  const many = await mods.select.select({ title: 'x', multi: true, options: [{ label: 'a' }], theme: plain });
-  if (many !== null) throw new Error('множественный вернул ' + JSON.stringify(many));
-  const ok = await mods.select.confirmSelect({ title: 'удалить всё?', theme: plain });
-  if (ok !== false) throw new Error('confirmSelect подтвердил без TTY');
-  return 'отказ по умолчанию';
+  // Признак TTY подменяем принудительно: иначе в настоящем терминале тест
+  // открыл бы живое меню и завис, ожидая нажатия клавиши.
+  const realTTY = process.stdout.isTTY;
+  process.stdout.isTTY = false;
+  try {
+    const one = await mods.select.select({ title: 'x', options: [{ label: 'Разрешить' }, { label: 'Отклонить' }], theme: plain });
+    if (one !== -1) throw new Error('одиночный выбор вернул ' + one + ' (ждём -1)');
+    const many = await mods.select.select({ title: 'x', multi: true, options: [{ label: 'a' }], theme: plain });
+    if (many !== null) throw new Error('множественный вернул ' + JSON.stringify(many));
+    const ok = await mods.select.confirmSelect({ title: 'удалить всё?', theme: plain });
+    if (ok !== false) throw new Error('confirmSelect подтвердил без TTY');
+    return 'отказ по умолчанию';
+  } finally {
+    process.stdout.isTTY = realTTY;
+  }
 });
 
 await check('screen.claim передаёт и возвращает владение', () => {
