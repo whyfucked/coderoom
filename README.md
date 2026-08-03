@@ -54,25 +54,23 @@ coderoom
 node bin/coderoom.mjs
 ```
 
-### Выложить самому
+### Собрать и выложить
 
-Пакет уже собран и проверен: в него входят только `bin/`, `src/`, `plugins/`, README и LICENSE
-— **без серверной части, ключей и базы**.
+В пакет входят только `bin/`, `src/`, `plugins/`, README и LICENSE — **без серверной
+части, ключей и базы**.
 
 ```bash
 npm test              # прогон проверок
-npm pack              # → coderoom-cli-0.1.0.tgz (~460 КБ)
+npm pack              # → coderoom-cli-1.0.0.tgz (~455 КБ)
 npm publish           # нужен npm login; тесты прогонятся автоматически
 ```
 
-Раздать без npm можно тем же архивом или через GitHub:
+Раздать без npm — тем же архивом или прямо из репозитория:
 
 ```bash
-npm install -g coderoom-cli-0.1.0.tgz
-npm install -g github:ТВОЙ_НИК/coderoom
+npm install -g coderoom-cli-1.0.0.tgz
+npm install -g github:whyfucked/coderoom
 ```
-
-По желанию впиши в `package.json` свои `author` и `repository` — на работу это не влияет.
 
 ---
 

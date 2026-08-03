@@ -34,8 +34,16 @@
     "llm",
     "terminal"
   ],
-  "author": "",
+  "author": "whyfucked",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whyfucked/coderoom.git"
+  },
+  "homepage": "https://github.com/whyfucked/coderoom#readme",
+  "bugs": {
+    "url": "https://github.com/whyfucked/coderoom/issues"
+  },
   "os": [
     "win32",
     "darwin",
