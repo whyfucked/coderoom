@@ -1,0 +1,52 @@
+{
+  "name": "coderoom-cli",
+  "version": "1.0.0",
+  "description": "Локальный агент для работы с кодом в терминале и браузере: читает и правит файлы, запускает команды. 58 моделей по одному ключу. Без внешних зависимостей.",
+  "type": "module",
+  "bin": {
+    "coderoom": "bin/coderoom.mjs",
+    "cr": "bin/coderoom.mjs"
+  },
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node bin/coderoom.mjs",
+    "web": "node bin/coderoom.mjs --web",
+    "gateway": "node server/server.mjs",
+    "test": "node test/smoke.mjs",
+    "prepublishOnly": "node test/smoke.mjs"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "cli",
+    "coding-assistant",
+    "agentrouter",
+    "hcnsec",
+    "claude",
+    "codex",
+    "llm",
+    "terminal"
+  ],
+  "author": "",
+  "license": "MIT",
+  "os": [
+    "win32",
+    "darwin",
+    "linux"
+  ],
+  "dependencies": {},
+  "files": [
+    "bin/",
+    "src/",
+    "plugins/",
+    "README.md",
+    "LICENSE"
+  ]
+}

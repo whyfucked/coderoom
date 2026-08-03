@@ -1,0 +1,8 @@
+{
+  "name": "coderoom-skills",
+  "version": "1.0.0",
+  "description": "Доменные навыки CodeRoom: backend, тесты, отладка, безопасность, БД, рефакторинг, производительность, деплой.",
+  "author": {
+    "name": "CodeRoom"
+  }
+}
