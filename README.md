@@ -69,7 +69,7 @@ npm publish           # нужен npm login; тесты прогонятся а
 
 ```bash
 npm install -g coderoom-cli-0.1.0.tgz
-npm install -g github:ТВОЙ_НИК/coderoom
+npm install -g github:whyfucked/coderoom
 ```
 
 По желанию впиши в `package.json` свои `author` и `repository` — на работу это не влияет.
