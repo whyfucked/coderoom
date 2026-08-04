@@ -808,6 +808,164 @@ await check('шлюз: /health, 401 без ключа, 200 с ключом', asy
   }
 });
 
+console.log('\n── логи чатов ──');
+
+await check('шлюз пишет переписку в лог и умеет искать', () => {
+  const rec = createKey({ label: 'логи' });
+  const st = GW.store();
+  st.logChat({
+    keyId: rec.id, keyLabel: 'логи', model: 'claude-opus-5', upstream: 'agentrouter',
+    status: 200, ms: 1200, tokens: { input: 100, output: 250 }, ip: '127.0.0.1',
+    prompt: 'почини сборку', reply: 'готово, поправил пути',
+    messages: [{ role: 'user', content: 'почини сборку' }, { role: 'assistant', content: 'готово' }],
+  });
+
+  const list = GW.listChats({ limit: 5 });
+  if (!list.length) throw new Error('чат не записался');
+  const one = GW.getChat(list[0].id);
+  if (one.prompt !== 'почини сборку') throw new Error('запрос потерян: ' + one.prompt);
+  if (one.reply !== 'готово, поправил пути') throw new Error('ответ потерян');
+  if (!Array.isArray(one.messages) || one.messages.length !== 2) throw new Error('переписка не сохранилась');
+  if (!GW.listChats({ q: 'сборку' }).length) throw new Error('поиск не находит');
+  if (GW.listChats({ q: 'такого-точно-нет' }).length) throw new Error('поиск находит лишнее');
+
+  const n = GW.deleteChats({ id: one.id });
+  if (n !== 1) throw new Error('не удалился');
+  GW.revokeKey(rec.id);
+  return 'запись, чтение, поиск, удаление';
+});
+
+await check('длинные тексты обрезаются, база не пухнет', () => {
+  const rec = createKey({ label: 'обрезка' });
+  GW.store().logChat({
+    keyId: rec.id, model: 'auto', upstream: 'hcnsec', status: 200,
+    prompt: 'п'.repeat(50_000), reply: 'о'.repeat(50_000),
+    messages: [{ role: 'user', content: 'м'.repeat(50_000) }],
+  });
+  const c = GW.listChats({ limit: 1 })[0];
+  const full = GW.getChat(c.id);
+  if (full.prompt.length > 4200) throw new Error('запрос не обрезан: ' + full.prompt.length);
+  if (full.reply.length > 8200) throw new Error('ответ не обрезан: ' + full.reply.length);
+  if (full.messages[0].content.length > 1600) throw new Error('сообщение не обрезано');
+  GW.deleteChats({ id: c.id });
+  GW.revokeKey(rec.id);
+  return `запрос ${full.prompt.length}, ответ ${full.reply.length} символов`;
+});
+
+await check('сквозь шлюз: запрос и ответ попадают в лог', async () => {
+  const http = await import('node:http');
+
+  /* фальшивый апстрим: отдаёт SSE-поток как настоящий */
+  const upstream = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    const chunk = (o) => res.write('data: ' + JSON.stringify(o) + '\n\n');
+    chunk({ choices: [{ delta: { content: 'Привет' } }] });
+    chunk({ choices: [{ delta: { content: ', это ответ' } }] });
+    chunk({ choices: [{ delta: {} }], usage: { prompt_tokens: 33, completion_tokens: 7 } });
+    res.write('data: [DONE]\n\n');
+    res.end();
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+
+  const upFile = path.join(process.env.CODEROOM_GATEWAY_DATA, 'upstreams.json');
+  fs.writeFileSync(upFile, JSON.stringify({
+    hcnsec: { baseUrl: `http://127.0.0.1:${upstream.address().port}`, apiKey: 'up-key' },
+  }));
+
+  const srv = await startGateway({ port: 0, host: '127.0.0.1' });
+  const rec = createKey({ label: 'сквозной' });
+  try {
+    const r = await fetch(`http://127.0.0.1:${srv.port}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + rec.key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'auto', stream: true, messages: [{ role: 'user', content: 'скажи привет' }] }),
+    });
+    const body = await r.text();
+    if (!body.includes('это ответ')) throw new Error('ответ апстрима не дошёл до клиента');
+
+    const chat = GW.listChats({ limit: 1 })[0];
+    if (!chat) throw new Error('лог не записался');
+    if (chat.prompt !== 'скажи привет') throw new Error('запрос в логе: ' + chat.prompt);
+    if (chat.reply !== 'Привет, это ответ') throw new Error('ответ в логе: ' + chat.reply);
+    if (chat.tokens.input !== 33 || chat.tokens.output !== 7) throw new Error('токены: ' + JSON.stringify(chat.tokens));
+    if (chat.upstream !== 'hcnsec') throw new Error('апстрим: ' + chat.upstream);
+
+    const key = listKeys().find((k) => k.id === rec.id);
+    if (key.used.input !== 33) throw new Error('расход не записался на ключ');
+
+    GW.deleteChats({ id: chat.id });
+    return `«${chat.reply}» · ${chat.tokens.input}↑ ${chat.tokens.output}↓ · ${chat.ms} мс`;
+  } finally {
+    revokeKey(rec.id);
+    srv.close();
+    upstream.close();
+    fs.rmSync(upFile, { force: true });
+  }
+});
+
+console.log('\n── телеграм-бот ──');
+
+await check('bot.mjs грузится и отдаёт createBot/startBotFromEnv', async () => {
+  const bot = await import('../server/bot.mjs');
+  for (const n of ['createBot', 'startBotFromEnv']) {
+    if (typeof bot[n] !== 'function') throw new Error('нет ' + n);
+  }
+  return Object.keys(bot).join(', ');
+});
+
+await check('бот отвечает на команды и не пускает чужих', async () => {
+  const { createBot } = await import('../server/bot.mjs');
+
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => {
+    const method = String(u).split('/').pop();
+    const body = JSON.parse(init?.body ?? '{}');
+    sent.push({ method, body });
+    return { json: async () => ({ ok: true, result: method === 'getUpdates' ? [] : { message_id: 1 } }) };
+  };
+
+  try {
+    const bot = createBot({ token: 'test:token', admins: ['42'], onLog: () => {} });
+    const msg = (text, from = 42) => ({ message: { chat: { id: 1 }, from: { id: from }, text } });
+    const last = () => sent[sent.length - 1].body.text;
+
+    await bot.handle(msg('/help'));
+    if (!last().includes('/keys')) throw new Error('help без команд');
+
+    await bot.handle(msg('/new телефон 100k'));
+    if (!/cr-/.test(last())) throw new Error('ключ не показан: ' + last().slice(0, 60));
+    const id = /id <code>([a-f0-9]+)<\/code>/.exec(last())?.[1];
+    if (!id) throw new Error('в ответе нет id ключа');
+
+    await bot.handle(msg('/keys'));
+    if (!last().includes('телефон')) throw new Error('ключа нет в списке');
+
+    await bot.handle({ callback_query: { id: 'cb1', data: 'key:' + id, from: { id: 42 }, message: { chat: { id: 1 }, message_id: 7 } } });
+    const card = sent[sent.length - 1].body.text;
+    if (!card.includes('лимит')) throw new Error('карточка ключа без лимита');
+
+    await bot.handle(msg('/stats'));
+    if (!last().includes('Расход')) throw new Error('нет статистики');
+
+    await bot.handle(msg('/chats'));
+    if (!/Чаты|чат/i.test(last())) throw new Error('нет экрана чатов');
+
+    await bot.handle(msg('/rm ' + id));
+    if (!last().includes('Удалено')) throw new Error('ключ не удалён: ' + last());
+
+    const before = sent.length;
+    await bot.handle(msg('/keys', 999));
+    const reply = sent[sent.length - 1].body.text;
+    if (sent.length === before) throw new Error('чужому вообще не ответили');
+    if (!reply.includes('999') || reply.includes('cr-')) throw new Error('чужому показали лишнее');
+
+    return `${sent.length} вызовов API, чужой отсечён`;
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 console.log('\n── CLI ──');
 
 await check('версия в package.json и config.mjs совпадает', async () => {

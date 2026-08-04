@@ -279,7 +279,7 @@ export function diffLines(before, after) {
   return out;
 }
 
-export function renderDiff(before, after, t, { context = 3, maxLines = 60, indent = '  ' } = {}) {
+export function renderDiff(before, after, t, { context = 3, maxLines = 60, indent = '  ', width = termWidth() } = {}) {
   const diff = diffLines(before, after);
   const keep = new Set();
   diff.forEach((d, idx) => {
@@ -287,7 +287,7 @@ export function renderDiff(before, after, t, { context = 3, maxLines = 60, inden
     for (let k = Math.max(0, idx - context); k <= Math.min(diff.length - 1, idx + context); k++) keep.add(k);
   });
 
-  const room = termWidth() - visLen(indent) - 8;
+  const room = width - visLen(indent) - 8;
   const lines = [];
   let skipped = 0;
   let shown = 0;
