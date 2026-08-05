@@ -10,6 +10,10 @@ import { Session } from '../src/session.mjs';
 import { Agent } from '../src/agent.mjs';
 import { createTheme, THEME_NAMES } from '../src/themes.mjs';
 import { StreamRenderer, Spinner, setTerminalTitle } from '../src/render.mjs';
+import {
+  checkForUpdates, maybeNotifyUpdate, runUpdate, updateCommand, detectInstall,
+  setUpdateCheck, setAutoInstall, resetUpdateSnooze,
+} from '../src/update-checker.mjs';
 
 function parseArgs(argv) {
   const opts = { _: [] };
@@ -31,6 +35,9 @@ function parseArgs(argv) {
       case '-p': case '--print': opts.print = true; break;
       case '--port': opts.port = Number(next()); break;
       case '--yolo': opts.mode = 'yolo'; break;
+      case '-y': case '--yes': case '--trust': opts.mode = 'yolo'; break;
+      case '--update': opts.update = true; break;
+      case '--no-update': case '--no-update-check': opts.noUpdateCheck = true; break;
       case '--plan': opts.mode = 'plan'; break;
       case '--no-color': process.env.NO_COLOR = '1'; break;
       default:
@@ -53,6 +60,7 @@ function help() {
     coderoom                       интерактивный режим в текущей папке
     coderoom "текст задачи"        выполнить задачу и выйти
     coderoom --web                 открыть интерфейс в браузере
+    coderoom update [now|auto|off] обновление: проверить, поставить, настроить
     ${t.muted('(шлюз — отдельный сервер в папке server/: cd server && npm start)')}
 
   ${t.bold('Флаги')}
@@ -62,6 +70,9 @@ function help() {
         --mode <режим>      default | acceptEdits | plan | yolo
         --plan              то же, что --mode plan (ничего не меняет)
         --yolo              без подтверждений ${t.muted('(осторожно)')}
+    -y, --yes               то же: ничего не спрашивать
+        --update            обновиться до свежей версии и выйти
+        --no-update         не проверять обновления в этот запуск
     -c, --continue          продолжить последнюю сессию в этой папке
     -r, --resume <id>       продолжить конкретную сессию
     -p, --print             без интерактива: вывести ответ и выйти
@@ -81,8 +92,57 @@ function help() {
 `);
 }
 
+/** `coderoom update [now|auto|manual|off|on]` — обновление без запуска агента. */
+async function cliUpdate(arg = '') {
+  const cfg = loadConfig();
+  const t = createTheme(cfg.theme);
+  const key = String(arg).trim().toLowerCase();
+
+  if (key === 'off')    { setUpdateCheck(cfg, false); console.log(`  ${t.success('✓')} проверка обновлений выключена`); return; }
+  if (key === 'on')     { setUpdateCheck(cfg, true); resetUpdateSnooze(); console.log(`  ${t.success('✓')} проверка обновлений включена`); return; }
+  if (key === 'auto')   { setAutoInstall(cfg, true); console.log(`  ${t.success('✓')} новые версии будут ставиться сами`); return; }
+  if (key === 'manual') { setAutoInstall(cfg, false); console.log(`  ${t.success('✓')} перед установкой будем спрашивать`); return; }
+
+  process.stdout.write(`  ${t.muted('смотрю npm…')}\r`);
+  const res = await checkForUpdates({ cfg, force: true, silent: true });
+  process.stdout.write('\x1b[2K');
+
+  if (!res.latestVersion) {
+    console.log(`  ${t.error('Не смог проверить обновления')}${res.error ? t.muted(': ' + res.error) : ''}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (!res.updateAvailable) {
+    console.log(`  ${t.success('✓')} версия ${t.bold('v' + res.currentVersion)} — свежее некуда`);
+    return;
+  }
+
+  const install = detectInstall();
+  const plan = updateCommand(install, res.latestVersion);
+  console.log(`  ${t.bold(t.primary(`CodeRoom ${res.latestVersion}`))} ${t.muted(`(у тебя ${res.currentVersion})`)}`);
+
+  if (!plan.cmd) {
+    console.log(`  ${t.muted('Обнови вручную:')} ${plan.text}`);
+    return;
+  }
+
+  console.log(`  ${t.muted(plan.text)}`);
+  const done = await runUpdate({ version: res.latestVersion, install, onOutput: (l) => process.stdout.write(`  ${t.muted(l)}\n`) });
+  if (done.ok) {
+    resetUpdateSnooze();
+    console.log(`  ${t.success('✓')} обновлено до v${res.latestVersion}`);
+  } else {
+    console.log(`  ${t.error('✗')} не получилось${done.hint ? '\n  ' + t.muted(done.hint) : ''}`);
+    process.exitCode = 1;
+  }
+}
+
 async function main() {
   const argv = process.argv.slice(2);
+
+  if (argv[0] === 'update' || argv[0] === 'upgrade') {
+    return cliUpdate(argv[1]);
+  }
 
   if (argv[0] === 'gateway') {
     const { existsSync } = await import('node:fs');
@@ -116,6 +176,7 @@ async function main() {
 
   if (opts.help) return help();
   if (opts.version) return console.log(VERSION);
+  if (opts.update) return cliUpdate('now');
 
   const cwd = path.resolve(opts.dir ?? process.cwd());
   let cfg = loadConfig();
@@ -129,6 +190,15 @@ async function main() {
   if (opts.model) cfg.model = opts.model;
   if (opts.theme) cfg.theme = opts.theme;
   if (opts.mode) cfg.permissions.mode = opts.mode;
+
+
+  // Обновления: в диалоге спросит сам Repl, здесь — только тихое уведомление
+  if (opts.noUpdateCheck) cfg.update = { ...(cfg.update ?? {}), check: false };
+  if (opts.web || opts.print) {
+    const t = createTheme(cfg.theme);
+    maybeNotifyUpdate(cfg, t, { write: (s) => process.stderr.write(s + '\n') })
+      .catch(() => { /* обновления не должны мешать работе */ });
+  }
 
 
   if (opts.web) {

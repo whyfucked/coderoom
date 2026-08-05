@@ -13,13 +13,17 @@ import { notify } from './screen.mjs';
 import { Agent } from './agent.mjs';
 import { Session } from './session.mjs';
 import { Provider, estimateTokens } from './provider.mjs';
-import { MODES } from './permissions.mjs';
+import { MODES, ruleFor } from './permissions.mjs';
 import {
   saveConfig, resolveProvider, maskKey, CONFIG_FILE, CONFIG_DIR,
-  PROVIDER_PRESETS, GLOBAL_MEMORY,
+  PROVIDER_PRESETS, GLOBAL_MEMORY, DEFAULT_CONFIG,
 } from './config.mjs';
 import { changeKey, VERSION } from './onboarding.mjs';
 import { loadPlugins, expandCommand } from './plugins.mjs';
+import {
+  checkForUpdates, shouldPrompt, runUpdate, updateCommand, updateSettings,
+  snoozeUpdate, skipVersion, setUpdateCheck, setAutoInstall, resetUpdateSnooze, detectInstall,
+} from './update-checker.mjs';
 
 export class Repl {
   constructor({ cfg, cwd = process.cwd(), session }) {
@@ -35,6 +39,11 @@ export class Repl {
     this.queue = [];
     this.modelChoices = [];
     try { this.plugins = loadPlugins({ cwd }); } catch { this.plugins = { commands: new Map(), skills: new Map(), agents: new Map(), plugins: new Map() }; }
+
+    // проверку обновлений запускаем сразу в фоне: к первому вопросу ответ уже будет
+    this.updateCheck = updateSettings(cfg).check
+      ? checkForUpdates({ cfg, silent: true }).catch(() => null)
+      : Promise.resolve(null);
 
     this.agent = new Agent({
       cfg,
@@ -161,20 +170,29 @@ export class Repl {
     }
 
     const danger = req.danger ? `⚠  ${req.danger}` : null;
+
+    // «Больше не спрашивать» не предлагаем для опасных команд — там осознанность важнее удобства
+    const rule = ruleFor(req.tool, req.args);
+    const options = [
+      { label: 'Разрешить', hint: 'один раз' },
+      { label: 'Разрешить все такие', hint: 'до конца сессии' },
+    ];
+    if (!req.danger) options.push({ label: 'Больше не спрашивать', hint: `запомнить правило ${rule}` });
+    options.push({ label: 'Отклонить', hint: 'агент предложит другой путь' });
+
     const pick = await select({
       theme: t,
       title: danger ? danger : `Разрешить ${req.tool}?`,
       subtitle: req.label ? truncate(req.label, termWidth() - 6) : req.reason,
-      options: [
-        { label: 'Разрешить', hint: 'один раз' },
-        { label: 'Разрешить все такие', hint: 'до конца сессии' },
-        { label: 'Отклонить', hint: 'агент предложит другой путь' },
-      ],
-      footer: 'Enter выбрать · Esc отклонить',
+      options,
+      footer: 'Enter выбрать · Esc отклонить · Shift+Tab — режим без вопросов',
     });
 
-    if (pick === 0) return 'yes';
-    if (pick === 1) return 'always';
+    if (pick < 0) return 'no';
+    const answer = options[pick]?.label;
+    if (answer === 'Разрешить') return 'yes';
+    if (answer === 'Разрешить все такие') return 'always';
+    if (answer === 'Больше не спрашивать') return 'forever';
     return 'no';
   }
 
@@ -207,6 +225,8 @@ export class Repl {
       skills:  { desc: 'навыки (skills) агента',       run: () => this.#cmdSkills() },
       skill:   { desc: 'применить навык: /skill <имя> [задача]', run: (a) => this.#cmdSkill(a) },
       plugins: { desc: 'плагины и их команды',         run: () => this.#cmdPlugins() },
+      update:  { desc: 'обновление: /update [now|auto|off|on]', run: (a) => this.#cmdUpdate(a) },
+      trust:   { desc: 'не спрашивать разрешения: /trust [on|off]', run: (a) => this.#cmdTrust(a) },
       exit:    { desc: 'выход',                        run: () => { this.exiting = true; } },
       quit:    { desc: 'выход',                        run: () => { this.exiting = true; } },
     };
@@ -800,6 +820,175 @@ export class Repl {
   }
 
 
+  /* ─── обновления ──────────────────────────────────────────────────── */
+
+  /** /update [now|auto|manual|on|off] — проверить, поставить, настроить. */
+  async #cmdUpdate(arg) {
+    const t = this.t;
+    const key = (arg || '').trim().toLowerCase();
+
+    if (key === 'off')    { setUpdateCheck(this.cfg, false); stdout.write(`  ${t.success(t.symbols.check)} проверка обновлений выключена ${t.muted('(включить: /update on)')}\n\n`); return; }
+    if (key === 'on')     { setUpdateCheck(this.cfg, true);  resetUpdateSnooze(); stdout.write(`  ${t.success(t.symbols.check)} проверка обновлений включена\n\n`); return; }
+    if (key === 'auto')   { setAutoInstall(this.cfg, true);  stdout.write(`  ${t.success(t.symbols.check)} новые версии буду ставить сам, без вопросов\n\n`); return; }
+    if (key === 'manual') { setAutoInstall(this.cfg, false); stdout.write(`  ${t.success(t.symbols.check)} перед установкой буду спрашивать\n\n`); return; }
+
+    stdout.write(`  ${t.muted('Смотрю, что нового в npm…')}\r`);
+    const res = await checkForUpdates({ cfg: this.cfg, force: true, silent: true });
+    stdout.write('\x1b[2K');
+
+    if (res.error && !res.latestVersion) {
+      stdout.write(`  ${t.warn('Не смог проверить:')} ${res.error}\n\n`);
+      return;
+    }
+
+    if (!res.updateAvailable) {
+      stdout.write(`  ${t.success(t.symbols.check)} у тебя свежая версия ${t.bold('v' + res.currentVersion)}\n\n`);
+      return;
+    }
+
+    resetUpdateSnooze();
+    if (key === 'now') return this.#installUpdate(res.latestVersion);
+    await this.#updateFlow(res);
+  }
+
+  /** Меню «вышла новая версия»: обновить / позже / пропустить / решать за меня. */
+  async #updateFlow(res) {
+    const t = this.t;
+    const install = detectInstall();
+    const plan = updateCommand(install, res.latestVersion);
+    const kind = { major: 'мажорное', minor: 'минорное', patch: 'патч' }[res.kind] ?? '';
+
+    if (updateSettings(this.cfg).autoInstall) {
+      stdout.write(`  ${t.muted(`Новая версия ${res.latestVersion} — ставлю автоматически…`)}\n`);
+      return this.#installUpdate(res.latestVersion);
+    }
+
+    const options = [
+      { label: 'Обновить сейчас', hint: plan.cmd ? plan.text : 'вручную — команда ниже' },
+      { label: 'Позже', hint: 'напомню через сутки' },
+      { label: `Пропустить ${res.latestVersion}`, hint: 'про эту версию больше не напоминать' },
+      { label: 'Всегда обновлять сам', hint: 'ставить новые версии без вопросов' },
+      { label: 'Не проверять обновления', hint: 'выключить совсем (/update on — вернуть)' },
+    ];
+
+    const pick = await select({
+      theme: t,
+      title: `Вышла CodeRoom ${res.latestVersion}${kind ? ` (${kind})` : ''}`,
+      subtitle: `у тебя ${res.currentVersion} · ${install.fromSource ? 'запуск из исходников' : install.global ? 'глобальная установка' : 'локальная установка'}`,
+      options,
+      footer: 'Enter выбрать · Esc — позже',
+    });
+
+    switch (pick) {
+      case 0: return this.#installUpdate(res.latestVersion);
+      case 2:
+        skipVersion(this.cfg, res.latestVersion);
+        stdout.write(`  ${t.muted(`Хорошо, про ${res.latestVersion} не напомню.`)}\n\n`);
+        return;
+      case 3:
+        setAutoInstall(this.cfg, true);
+        stdout.write(`  ${t.muted('Дальше буду обновлять сам. Сейчас ставлю…')}\n`);
+        return this.#installUpdate(res.latestVersion);
+      case 4:
+        setUpdateCheck(this.cfg, false);
+        stdout.write(`  ${t.muted('Больше не проверяю. Вернуть: /update on')}\n\n`);
+        return;
+      default:
+        snoozeUpdate(24);
+        stdout.write(`  ${t.muted('Напомню завтра. Обновить руками: /update now')}\n\n`);
+    }
+  }
+
+  /** Ставим пакет, показывая, что происходит. */
+  async #installUpdate(version = 'latest') {
+    const t = this.t;
+    const install = detectInstall();
+    const plan = updateCommand(install, version);
+
+    if (!plan.cmd) {
+      stdout.write(`\n  ${t.warn('Автоматически не получится.')} ${t.muted('Обнови так:')}\n  ${t.code(plan.text)}\n\n`);
+      return;
+    }
+
+    stdout.write(`\n  ${t.muted(plan.text)}\n`);
+    this.spinner.start('ставлю обновление…');
+    const last = [];
+    const res = await runUpdate({
+      version, install,
+      onOutput: (line) => { last.push(line); if (last.length > 3) last.shift(); this.spinner.update(truncate(line, 60)); },
+    });
+    this.spinner.stop();
+
+    if (res.ok) {
+      stdout.write(`  ${t.success(t.symbols.check)} готово — поставлена ${t.bold('v' + version)}\n`);
+      stdout.write(`  ${t.muted('Перезапусти coderoom, чтобы новая версия заработала.')}\n\n`);
+      resetUpdateSnooze();
+      return;
+    }
+
+    stdout.write(`  ${t.error(t.symbols.cross)} не вышло обновиться${res.code != null ? t.muted(` (код ${res.code})`) : ''}\n`);
+    for (const l of last) stdout.write(`     ${t.muted(truncate(l, termWidth() - 8))}\n`);
+    if (res.hint) stdout.write(`  ${t.muted(res.hint)}\n`);
+    stdout.write('\n');
+  }
+
+  /** Проверка при старте: спрашиваем один раз и не мешаем работать. */
+  async #updateGate() {
+    if (!stdout.isTTY) return;
+    const res = await Promise.race([
+      this.updateCheck,
+      new Promise((r) => setTimeout(() => r(null), 2500)),
+    ]).catch(() => null);
+
+    if (!res || !shouldPrompt(res, this.cfg)) return;
+    if (!updateSettings(this.cfg).prompt && !updateSettings(this.cfg).autoInstall) return;
+    await this.#updateFlow(res);
+  }
+
+
+  /* ─── доверие инструментам ────────────────────────────────────────── */
+
+  /** /trust — перестать спрашивать разрешения (или вернуть вопросы обратно). */
+  async #cmdTrust(arg) {
+    const t = this.t;
+    const key = (arg || '').trim().toLowerCase();
+
+    const apply = (mode, note) => {
+      this.agent.permissions.setMode(mode);
+      saveConfig(this.cfg);
+      stdout.write(`  ${t.success(t.symbols.check)} режим ${t.bold(mode)} — ${t.muted(note)}\n\n`);
+    };
+
+    if (key === 'on' || key === 'yolo') return apply('yolo', MODES.yolo.hint);
+    if (key === 'edits') return apply('acceptEdits', MODES.acceptEdits.hint);
+    if (key === 'off') return apply('default', MODES.default.hint);
+
+    const saved = (this.cfg.permissions.allow ?? []).filter((r) => !DEFAULT_CONFIG.permissions.allow.includes(r));
+    const pick = await select({
+      theme: t,
+      title: 'Спрашивать ли разрешения?',
+      subtitle: `сейчас: ${this.cfg.permissions.mode}${saved.length ? ` · своих правил: ${saved.length}` : ''}`,
+      options: [
+        { label: 'Править файлы без вопросов', hint: MODES.acceptEdits.hint },
+        { label: 'Вообще ничего не спрашивать', hint: MODES.yolo.hint },
+        { label: 'Спрашивать, как раньше', hint: MODES.default.hint },
+        { label: 'Забыть сохранённые правила', hint: saved.length ? saved.join(', ') : 'своих правил нет' },
+      ],
+      footer: 'Enter выбрать · Esc отмена',
+    });
+
+    if (pick === 0) return apply('acceptEdits', MODES.acceptEdits.hint);
+    if (pick === 1) return apply('yolo', MODES.yolo.hint);
+    if (pick === 2) return apply('default', MODES.default.hint);
+    if (pick === 3) {
+      this.cfg.permissions.allow = [...DEFAULT_CONFIG.permissions.allow];
+      this.cfg.permissions.ask = [...DEFAULT_CONFIG.permissions.ask];
+      saveConfig(this.cfg);
+      stdout.write(`  ${t.success(t.symbols.check)} правила сброшены — снова буду спрашивать\n\n`);
+    }
+  }
+
+
 
   #banner() {
     if (!this.cfg.ui.banner) return;
@@ -878,6 +1067,8 @@ export class Repl {
     console.clear();
     setTerminalTitle(`coderoom — ${path.basename(this.cwd)}`);
     this.#banner();
+
+    try { await this.#updateGate(); } catch { /* обновление не должно мешать работе */ }
 
     this.input = createInput({
       theme: this.t,

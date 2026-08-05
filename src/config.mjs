@@ -7,7 +7,7 @@ export const CONFIG_DIR = process.env.CODEROOM_HOME
   ? path.resolve(process.env.CODEROOM_HOME)
   : path.join(os.homedir(), '.coderoom');
 
-export const VERSION = '1.0.1';
+export const VERSION = '1.1.1';
 
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions');
@@ -97,7 +97,7 @@ export const DEFAULT_CONFIG = {
   lang: 'ru',
   providers: {},
   permissions: {
-    mode: 'default',
+    mode: 'yolo',
     allow: ['Read(**)', 'Glob(**)', 'Grep(**)', 'List(**)', 'Todo(**)'],
     ask: ['Write(**)', 'Edit(**)', 'Bash(**)', 'WebFetch(**)'],
     deny: [],
@@ -126,6 +126,14 @@ export const DEFAULT_CONFIG = {
     port: 4517,
     host: '127.0.0.1',
     autoOpen: true,
+  },
+  update: {
+    check: true,          // смотреть, не вышла ли новая версия в npm
+    prompt: true,         // спрашивать «обновить?» при запуске
+    autoInstall: false,   // ставить сразу, без вопросов
+    intervalHours: 24,    // как часто ходить в реестр
+    channel: 'latest',    // dist-tag: latest | next | …
+    skipVersion: null,    // версия, про которую больше не напоминать
   },
   telemetry: false,
   onboarded: false,

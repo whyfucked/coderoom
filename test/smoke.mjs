@@ -33,7 +33,7 @@ async function check(name, fn) {
 console.log('\n── импорты ──');
 
 const mods = {};
-for (const m of ['config', 'themes', 'ansi', 'render', 'keys', 'screen', 'select', 'input', 'permissions', 'tools', 'plugins', 'provider', 'session', 'agent', 'onboarding', 'repl', 'web', 'web-client']) {
+for (const m of ['config', 'themes', 'ansi', 'render', 'keys', 'screen', 'select', 'input', 'permissions', 'tools', 'plugins', 'provider', 'session', 'agent', 'onboarding', 'repl', 'web', 'web-client', 'update-checker']) {
   await check(m + '.mjs', async () => {
     mods[m] = await import(`../src/${m}.mjs`);
     return Object.keys(mods[m]).join(', ').slice(0, 90);
@@ -54,7 +54,8 @@ const expect = {
   screen: ['claim', 'notify', 'hasOwner'],
   select: ['select', 'confirmSelect'],
   input: ['createInput'],
-  permissions: ['MODES', 'PermissionEngine', 'safeResolve', 'redactSecrets', 'globToRegExp', 'checkDangerous'],
+  permissions: ['MODES', 'PermissionEngine', 'safeResolve', 'redactSecrets', 'globToRegExp', 'checkDangerous', 'ruleFor'],
+  'update-checker': ['checkForUpdates', 'shouldPrompt', 'runUpdate', 'updateCommand', 'updateSettings', 'compareVersions', 'updateKind', 'detectInstall', 'maybeNotifyUpdate', 'snoozeUpdate', 'skipVersion', 'setUpdateCheck', 'setAutoInstall', 'resetUpdateSnooze'],
   tools: ['ALL_TOOLS', 'toolSchemas', 'toolByName', 'describeCall', 'SkillTool'],
   plugins: ['loadPlugins', 'expandCommand', 'parseFrontmatter', 'skillsSummary', 'BUNDLED_PLUGINS_DIR'],
   provider: ['Provider', 'ProviderError', 'estimateTokens'],
@@ -421,6 +422,31 @@ await check('опасные команды требуют подтвержден
   return 'ловится: ' + d.danger;
 });
 
+await check('«больше не спрашивать» превращается в правило и работает после', () => {
+  const { PermissionEngine, ruleFor } = mods.permissions;
+  const local = structuredClone(cfg);
+  local.permissions.mode = 'default';
+  const eng = new PermissionEngine(local);
+
+  const args = { command: 'npm run build' };
+  if (eng.check('Bash', args, toolByName('Bash')).decision !== 'ask') throw new Error('сразу разрешил');
+
+  const rule = eng.allowForever('Bash', args);
+  if (rule !== 'Bash(npm run *)') throw new Error('правило: ' + rule);
+  if (!local.permissions.allow.includes(rule)) throw new Error('правило не сохранилось в конфиг');
+
+  // новый движок = новый запуск: правило должно продолжать действовать
+  const fresh = new PermissionEngine(local);
+  if (fresh.check('Bash', { command: 'npm run test' }, toolByName('Bash')).decision !== 'allow') {
+    throw new Error('после перезапуска снова спрашивает');
+  }
+  if (fresh.check('Bash', { command: 'git push --force' }, toolByName('Bash')).decision !== 'ask') {
+    throw new Error('правило разрешило лишнее');
+  }
+  if (ruleFor('Write', { path: 'src/a.js' }) !== 'Write(**)') throw new Error('правило для Write');
+  return rule;
+});
+
 await check('выход за пределы рабочей папки блокируется', () => {
   try {
     safeResolve(work, '../../../../etc/passwd', cfg);
@@ -582,6 +608,99 @@ await check('системный промпт содержит навыки и Sk
   if (!/frontend-design/.test(sp)) throw new Error('нет frontend-design в промпте');
   if (!/Skill\(/.test(sp)) throw new Error('нет упоминания Skill()');
   return skillsSummary({ cwd: work }).split('\n').length + ' навыков в промпте';
+});
+
+console.log('\n── обновления ──');
+
+const UP = mods['update-checker'];
+
+await check('сравнение версий и тип обновления', () => {
+  if (UP.compareVersions('1.2.3', '1.2.4') !== -1) throw new Error('1.2.3 < 1.2.4');
+  if (UP.compareVersions('2.0.0', '1.9.9') !== 1) throw new Error('2.0.0 > 1.9.9');
+  if (UP.compareVersions('1.0.0', '1.0.0') !== 0) throw new Error('равные');
+  if (UP.compareVersions('1.0.0-beta.1', '1.0.0') !== -1) throw new Error('пререлиз старше релиза');
+  if (UP.updateKind('1.0.0', '2.0.0') !== 'major') throw new Error('major');
+  if (UP.updateKind('1.0.0', '1.1.0') !== 'minor') throw new Error('minor');
+  if (UP.updateKind('1.0.0', '1.0.1') !== 'patch') throw new Error('patch');
+  if (UP.updateKind('1.0.1', '1.0.0') !== 'none') throw new Error('откат не обновление');
+  return 'major/minor/patch/none';
+});
+
+await check('команда обновления зависит от способа установки', () => {
+  const g = UP.updateCommand({ manager: 'npm', global: true }, '2.0.0');
+  if (g.cmd !== 'npm' || !g.args.includes('-g')) throw new Error('глобальная: ' + g.text);
+  if (!g.text.includes('coderoom-cli@2.0.0')) throw new Error('нет версии: ' + g.text);
+  const l = UP.updateCommand({ manager: 'npm', local: true }, 'latest');
+  if (l.args.includes('-g')) throw new Error('локальной подсунули -g');
+  const p = UP.updateCommand({ manager: 'pnpm' }, 'latest');
+  if (p.cmd !== 'pnpm') throw new Error('pnpm: ' + p.text);
+  const npx = UP.updateCommand({ viaNpx: true }, 'latest');
+  if (npx.cmd !== null) throw new Error('для npx ставить нечего');
+  return `${g.text} · ${p.text}`;
+});
+
+await check('проверка обновлений ходит в реестр и уважает решения', async () => {
+  const http = await import('node:http');
+  const registry = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ version: '99.0.0' }));
+  });
+  await new Promise((r) => registry.listen(0, '127.0.0.1', r));
+  process.env.CODEROOM_REGISTRY = `http://127.0.0.1:${registry.address().port}`;
+
+  try {
+    const c = { ...cfg, update: { check: true, intervalHours: 24 } };
+    const res = await UP.checkForUpdates({ cfg: c, force: true });
+    if (!res.updateAvailable || res.latestVersion !== '99.0.0') throw new Error('не увидел версию: ' + JSON.stringify(res));
+    if (!UP.shouldPrompt(res, c)) throw new Error('не предложил обновиться');
+
+    // «позже» — сутки молчим
+    UP.snoozeUpdate(24);
+    if (UP.shouldPrompt(res, c)) throw new Error('спрашивает после «позже»');
+    UP.resetUpdateSnooze();
+
+    // «пропустить версию» — про неё больше ни слова
+    const skipped = await UP.checkForUpdates({ cfg: { ...c, update: { ...c.update, skipVersion: '99.0.0' } }, force: true });
+    if (UP.shouldPrompt(skipped, { update: { skipVersion: '99.0.0' } })) throw new Error('спрашивает про пропущенную');
+
+    // проверка выключена — в сеть не ходим
+    const off = await UP.checkForUpdates({ cfg: { ...c, update: { check: false } } });
+    if (UP.shouldPrompt(off, { update: { check: false } })) throw new Error('спрашивает при выключенной проверке');
+
+    // кэш: второй заход без force не должен дёргать сеть
+    registry.close();
+    const cached = await UP.checkForUpdates({ cfg: c });
+    if (cached.latestVersion !== '99.0.0' || !cached.fromCache) throw new Error('кэш не сработал');
+    return `${res.currentVersion} → 99.0.0 (${res.kind}), кэш и «позже» работают`;
+  } finally {
+    delete process.env.CODEROOM_REGISTRY;
+    try { registry.close(); } catch { /* уже закрыт */ }
+  }
+});
+
+await check('недоступный реестр не роняет проверку', async () => {
+  process.env.CODEROOM_REGISTRY = 'http://127.0.0.1:1';
+  try {
+    const res = await UP.checkForUpdates({ cfg: { update: { check: true, intervalHours: 0 } }, force: true });
+    if (res.updateAvailable && !res.fromCache) throw new Error('придумал обновление');
+    return res.error ? 'ошибка обработана' : 'ответ из кэша';
+  } finally {
+    delete process.env.CODEROOM_REGISTRY;
+  }
+});
+
+await check('настройки обновлений сохраняются в конфиг', () => {
+  const c = loadConfig();
+  UP.setAutoInstall(c, true);
+  UP.skipVersion(c, '9.9.9');
+  const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  if (saved.update?.autoInstall !== true) throw new Error('autoInstall не записан');
+  if (saved.update?.skipVersion !== '9.9.9') throw new Error('skipVersion не записан');
+  UP.setUpdateCheck(c, true);
+  c.update.autoInstall = false;
+  c.update.skipVersion = null;
+  saveConfig(c);
+  return 'autoInstall / skipVersion / check';
 });
 
 console.log('\n── сессии ──');
@@ -986,7 +1105,29 @@ await check('--help и --version работают', async () => {
   const h = execFileSync(process.execPath, [bin, '--help'], { encoding: 'utf8' });
   if (!/^\d+\.\d+\.\d+$/.test(v)) throw new Error('версия: ' + v);
   if (!h.includes('--web') || !h.includes('--model')) throw new Error('справка неполная');
+  if (!h.includes('--update')) throw new Error('в справке нет обновлений');
   return 'v' + v;
+});
+
+await check('coderoom update сообщает о состоянии версии', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const bin = path.join(import.meta.dirname, '..', 'bin', 'coderoom.mjs');
+  const run = (...args) => {
+    // недоступный реестр — законный повод для кода 1, нам важен текст
+    try {
+      return execFileSync(process.execPath, [bin, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, CODEROOM_REGISTRY: 'http://127.0.0.1:1', NO_COLOR: '1' },
+      });
+    } catch (e) {
+      return String(e.stdout ?? '');
+    }
+  };
+  const out = run('update');
+  if (!/обновлен|версия|Не смог/i.test(out)) throw new Error('невнятный вывод: ' + out.slice(0, 80));
+  if (!/выключена/i.test(run('update', 'off'))) throw new Error('update off не отработал');
+  run('update', 'on');
+  return out.trim().slice(0, 60);
 });
 
 // БД надо закрыть до удаления: Windows не даёт снять открытый файл

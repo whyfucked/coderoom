@@ -257,7 +257,8 @@ export async function startWebServer({ cfg, cwd = process.cwd(), port, host } = 
       const resolve = pending.get(body.id);
       if (resolve) {
         pending.delete(body.id);
-        resolve(body.answer === 'always' ? 'always' : body.answer === 'yes' ? 'yes' : 'no');
+        const ok = ['yes', 'always', 'forever'];
+        resolve(ok.includes(body.answer) ? body.answer : 'no');
       }
       return json(res, { ok: true });
     }

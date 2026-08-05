@@ -47,6 +47,41 @@ function subjectFor(toolName, args) {
   }
 }
 
+/** Команды, где первое слово ничего не говорит: git push ≠ git status. */
+const TWO_WORD_CLI = new Set([
+  'git', 'npm', 'pnpm', 'yarn', 'bun', 'npx', 'docker', 'cargo', 'go', 'dotnet',
+  'kubectl', 'pip', 'pip3', 'python', 'python3', 'node', 'make', 'gh', 'composer', 'gradle',
+]);
+
+/**
+ * Правило, которым можно один раз и навсегда разрешить «такие же» вызовы.
+ * Bash — по команде (`git *`), остальное — по инструменту (`Write(**)`),
+ * WebFetch — по домену.
+ */
+export function ruleFor(toolName, args) {
+  if (toolName === 'Bash') {
+    const cmd = String(args?.command ?? '').trim();
+    const parts = cmd.split(/\s+/).filter(Boolean);
+    if (!parts.length) return 'Bash(**)';
+    const base = parts[0];
+    const prefix = TWO_WORD_CLI.has(base) && parts[1] && !parts[1].startsWith('-')
+      ? `${base} ${parts[1]}`
+      : base;
+    return `Bash(${prefix} *)`;
+  }
+
+  if (toolName === 'WebFetch') {
+    try {
+      const u = new URL(String(args?.url ?? ''));
+      return `WebFetch(${u.protocol}//${u.host}/**)`;
+    } catch {
+      return 'WebFetch(**)';
+    }
+  }
+
+  return `${toolName}(**)`;
+}
+
 function ruleMatches(rule, toolName, args) {
   const parsed = parseRule(rule);
   if (!parsed) return false;
@@ -114,6 +149,18 @@ export class PermissionEngine {
     this.sessionAllow.add(`${toolName}:${subjectFor(toolName, args)}`);
   }
 
+  /**
+   * Разрешить навсегда: правило уходит в allow и переживает перезапуск
+   * (сохранение конфига — на вызывающей стороне). Возвращает правило.
+   */
+  allowForever(toolName, args) {
+    const rule = ruleFor(toolName, args);
+    this.addRule('allow', rule);
+    this.cfg.permissions.ask = (this.cfg.permissions.ask ?? []).filter((r) => r !== rule);
+    this.allowForSession(toolName, args);
+    return rule;
+  }
+
 
   check(toolName, args, tool) {
     const p = this.cfg.permissions;
@@ -131,7 +178,7 @@ export class PermissionEngine {
       };
     }
 
-    const danger = toolName === 'Bash' && this.cfg.security?.confirmDangerousCommands
+    const danger = toolName === 'Bash' && this.cfg.security?.confirmDangerousCommands && this.mode !== 'yolo'
       ? checkDangerous(args?.command ?? '')
       : null;
     if (danger) return { decision: 'ask', danger, reason: `потенциально опасно: ${danger}` };

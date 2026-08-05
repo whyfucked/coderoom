@@ -4,7 +4,7 @@ import os from 'node:os';
 import { Provider, estimateTokens } from './provider.mjs';
 import { PermissionEngine } from './permissions.mjs';
 import { ALL_TOOLS, toolByName, toolSchemas, describeCall } from './tools.mjs';
-import { GLOBAL_MEMORY } from './config.mjs';
+import { GLOBAL_MEMORY, saveConfig } from './config.mjs';
 import { skillsSummary } from './plugins.mjs';
 
 
@@ -286,7 +286,12 @@ export class Agent {
         preview: this.#preview(name, args),
       });
 
-      if (answer === 'always') {
+      if (answer === 'forever') {
+        // «больше не спрашивай»: правило уходит в конфиг и живёт после перезапуска
+        const rule = this.permissions.allowForever(name, args);
+        try { saveConfig(this.cfg); } catch { /* не смогли записать — хотя бы на сессию */ }
+        this.ui.onNotice?.(`Больше не спрашиваю: правило ${rule} сохранено (/config — посмотреть, /mode — сбросить)`, 'success');
+      } else if (answer === 'always') {
         this.permissions.allowForSession(name, args);
       } else if (answer !== 'yes') {
         this.ui.onToolError?.(callInfo, 'Отклонено пользователем');

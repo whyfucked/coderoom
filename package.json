@@ -1,6 +1,6 @@
 {
   "name": "coderoom-cli",
-  "version": "1.0.1",
+  "version": "1.1.1",
   "description": "Локальный агент для работы с кодом в терминале и браузере: читает и правит файлы, запускает команды. 58 моделей по одному ключу. Без внешних зависимостей.",
   "type": "module",
   "bin": {
@@ -20,6 +20,7 @@
     "web": "node bin/coderoom.mjs --web",
     "gateway": "node server/server.mjs",
     "test": "node test/smoke.mjs",
+    "test:update": "node test/update.mjs",
     "prepublishOnly": "node test/smoke.mjs"
   },
   "keywords": [
