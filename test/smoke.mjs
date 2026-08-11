@@ -14,8 +14,10 @@ process.env.NO_COLOR = '1';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'coderoom-test-'));
 process.env.CODEROOM_HOME = path.join(tmp, 'home');
 process.env.CODEROOM_GATEWAY_DATA = path.join(tmp, 'gwdata'); // изолируем данные шлюза от server/data
-delete process.env.AGENTROUTER_API_KEY;
+delete process.env.SEEKAI_API_KEY;
+delete process.env.BLUESMINDS_API_KEY;
 delete process.env.HCNSEC_API_KEY;
+
 
 let fails = 0;
 const ok = (name, extra = '') => console.log(`  OK   ${name}${extra ? '  ' + extra : ''}`);
@@ -33,7 +35,7 @@ async function check(name, fn) {
 console.log('\n── импорты ──');
 
 const mods = {};
-for (const m of ['config', 'themes', 'ansi', 'render', 'keys', 'screen', 'select', 'input', 'permissions', 'tools', 'plugins', 'provider', 'session', 'agent', 'onboarding', 'repl', 'web', 'web-client', 'update-checker']) {
+for (const m of ['config', 'themes', 'ansi', 'render', 'keys', 'screen', 'select', 'input', 'permissions', 'tools', 'plugins', 'provider', 'session', 'agent', 'onboarding', 'repl', 'web', 'web-client', 'update-checker', 'ssh']) {
   await check(m + '.mjs', async () => {
     mods[m] = await import(`../src/${m}.mjs`);
     return Object.keys(mods[m]).join(', ').slice(0, 90);
@@ -65,6 +67,7 @@ const expect = {
   repl: ['Repl'],
   web: ['startWebServer'],
   'web-client': ['clientHtml'],
+  ssh: ['listHosts', 'getHost', 'addHost', 'removeHost', 'parseTarget', 'ensureKey', 'hasKey', 'publicKey', 'runRemote', 'interactive', 'checkKeyAuth', 'installKey', 'probe', 'markOk', 'KEY_FILE', 'KNOWN_HOSTS'],
 };
 
 await check('server/gateway.mjs: нужные экспорты', () => {
@@ -82,7 +85,8 @@ for (const [m, names] of Object.entries(expect)) {
 
 console.log('\n── конфиг ──');
 
-const { loadConfig, saveConfig, resolveProvider, setProviderKey, maskKey, PROVIDER_PRESETS, CONFIG_FILE } = mods.config;
+const { loadConfig, saveConfig, resolveProvider, setProviderKey, maskKey, PROVIDER_PRESETS, MODEL_TIERS, CONFIG_FILE } = mods.config;
+
 let cfg;
 
 await check('loadConfig() создаёт дефолт', () => {
@@ -91,42 +95,72 @@ await check('loadConfig() создаёт дефолт', () => {
   return `${cfg.provider} / ${cfg.model} / тема ${cfg.theme}`;
 });
 
-await check('клиентский провайдер только один — coderoom', () => {
+await check('клиент ходит только через свой шлюз (coderoom)', () => {
   const ids = Object.keys(PROVIDER_PRESETS);
   if (ids.length !== 1 || ids[0] !== 'coderoom') throw new Error('провайдеры: ' + ids.join(', '));
   const modelIds = PROVIDER_PRESETS.coderoom.models.map((m) => m.id);
-  for (const need of ['claude-opus-5', 'auto', 'DeepSeek-V4-Pro']) {
+  for (const need of ['claude-opus-4-7', 'auto', 'DeepSeek-V4-Pro', 'nemotron-3-ultra-550b']) {
     if (!modelIds.includes(need)) throw new Error('нет модели ' + need);
   }
   return `coderoom, моделей ${modelIds.length}`;
 });
 
-await check('не-chat модели (картинки/аудио) помечены chat:false', () => {
+await check('в каталоге только чат: картинок/аудио и StepAudio нет', () => {
   const models = PROVIDER_PRESETS.coderoom.models;
-  const nonChat = models.filter((m) => m.chat === false).map((m) => m.id);
-  for (const need of ['step-image-edit-2', 'stepaudio-2.5-asr', 'stepaudio-2.5-tts', 'stepaudio-2.5-realtime']) {
-    if (!nonChat.includes(need)) throw new Error(need + ' не помечен chat:false');
-  }
-  if (models.find((m) => m.id === 'auto')?.chat === false) throw new Error('auto ошибочно помечен');
-  return nonChat.join(', ');
+  const nonChat = models.filter((m) => m.chat === false);
+  if (nonChat.length) throw new Error('остались не-chat модели: ' + nonChat.map((m) => m.id).join(', '));
+  const junk = models.filter((m) => /stepaudio|image-edit|-tts|-asr|realtime/i.test(m.id));
+  if (junk.length) throw new Error('остались не-текстовые: ' + junk.map((m) => m.id).join(', '));
+  return `${models.length} моделей, все чат`;
 });
 
-await check('апстримы шлюза: agentrouter + nvidia + все 21 модели hcnsec', () => {
-  const U = GW.GATEWAY_UPSTREAMS;
-  if (!U.agentrouter || !U.hcnsec || !U.nvidia) throw new Error('нет апстримов: ' + Object.keys(U).join(','));
-  if (!U.agentrouter.models.includes('claude-opus-5')) throw new Error('agentrouter без claude-opus-5');
-  if (U.hcnsec.models.length !== 21) throw new Error('hcnsec моделей: ' + U.hcnsec.models.length + ' (ждём все 21)');
-  // ничего не выкинуто — даже спец-модели на месте
-  for (const need of ['auto', 'sensenova-u1-fast', 'step-image-edit-2', 'stepaudio-2.5-asr', 'stepaudio-2.5-tts']) {
-    if (!U.hcnsec.models.includes(need)) throw new Error('нет модели ' + need);
+await check('каждая модель клиента лежит в своём разделе (Anthropic, Nvidia, Qwen…)', () => {
+  const models = PROVIDER_PRESETS.coderoom.models;
+  const noTier = models.filter((m) => !m.tier || !MODEL_TIERS[m.tier]);
+  if (noTier.length) throw new Error('без раздела: ' + noTier.map((m) => m.id).slice(0, 5).join(', '));
+
+  // разделы, обещанные в /model — должны быть непустыми
+  for (const tier of ['anthropic', 'openai', 'nvidia', 'deepseek', 'google', 'qwen', 'zai', 'yi']) {
+    if (!MODEL_TIERS[tier]) throw new Error('нет раздела ' + tier);
+    if (!models.some((m) => m.tier === tier)) throw new Error('раздел пуст: ' + tier);
   }
+  // порядок разделов уникален — иначе в /model заголовки задвоятся
+  const orders = Object.values(MODEL_TIERS).map((t) => t.order);
+  if (new Set(orders).size !== orders.length) throw new Error('одинаковый order у разделов');
+
+  const byTier = Object.keys(MODEL_TIERS).map((t) => `${t}:${models.filter((m) => m.tier === t).length}`);
+  return byTier.join(' ');
+});
+
+await check('апстримы шлюза: seekai + bluesminds + nvidia (только Nemotron) + hcnsec', () => {
+  const U = GW.GATEWAY_UPSTREAMS;
+  for (const need of ['seekai', 'bluesminds', 'nvidia', 'hcnsec']) {
+    if (!U[need]) throw new Error('нет апстрима: ' + need);
+  }
+  if (U.agentrouter) throw new Error('agentrouter должен быть удалён');
+
+  if (U.seekai.keyEnv !== 'SEEKAI_API_KEY') throw new Error('seekai keyEnv: ' + U.seekai.keyEnv);
+  if (!U.seekai.models.includes('claude-opus-4-7')) throw new Error('seekai без claude-opus-4-7');
+  if (!U.seekai.models.includes('claude-opus-4-8')) throw new Error('seekai без claude-opus-4-8');
+  if (!U.seekai.models.includes('claude-opus-5')) throw new Error('seekai без claude-opus-5');
+  if (!U.seekai.models.includes('gpt-5.6-sol')) throw new Error('seekai без gpt-5.6-sol');
+
+  if (U.bluesminds.keyEnv !== 'BLUESMINDS_API_KEY') throw new Error('bluesminds keyEnv: ' + U.bluesminds.keyEnv);
+  if (!U.bluesminds.baseUrl.includes('api.bluesminds.com')) throw new Error('bluesminds baseUrl: ' + U.bluesminds.baseUrl);
+  if (U.bluesminds.models.length !== 17) throw new Error('bluesminds моделей: ' + U.bluesminds.models.length + ' (ждём 17)');
+  for (const need of ['01-ai/yi-large', 'z-ai/glm-5.2', 'qwen/qwen3-coder-480b-a35b-instruct', 'openai/gpt-oss-120b']) {
+    if (!U.bluesminds.models.includes(need)) throw new Error('нет модели ' + need);
+  }
+
   if (U.nvidia.keyEnv !== 'NVIDIA_API_KEY') throw new Error('nvidia keyEnv: ' + U.nvidia.keyEnv);
   if (!U.nvidia.baseUrl.includes('integrate.api.nvidia.com')) throw new Error('nvidia baseUrl: ' + U.nvidia.baseUrl);
-  for (const need of ['nvidia/nemotron-3-ultra-550b-a55b', 'openai/gpt-oss-120b']) {
-    if (!U.nvidia.models.includes(need)) throw new Error('нет модели ' + need);
-  }
-  return `agentrouter ${U.agentrouter.models.length} + nvidia ${U.nvidia.models.length} + hcnsec ${U.hcnsec.models.length}`;
+  const notNemotron = U.nvidia.models.filter((m) => !/nemotron/i.test(m));
+  if (notNemotron.length) throw new Error('у nvidia осталось лишнее: ' + notNemotron.join(', '));
+
+  return `seekai ${U.seekai.models.length} + bluesminds ${U.bluesminds.models.length} + ` +
+    `nvidia ${U.nvidia.models.length} + hcnsec ${U.hcnsec.models.length}`;
 });
+
 
 await check('nvidia: enable_thinking по умолчанию, env выключает', () => {
   const before = process.env.NVIDIA_ENABLE_THINKING;
@@ -176,11 +210,13 @@ await check('в клиенте нет внутренних путей вендо
   const bad = PROVIDER_PRESETS.coderoom.models.filter((m) => m.id.includes('/'));
   if (bad.length) throw new Error('утекли id: ' + bad.map((m) => m.id).slice(0, 3).join(', '));
   const text = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'config.mjs'), 'utf8');
-  for (const word of ['agentrouter', 'hcnsec', 'anthropic', 'NVIDIA']) {
+  // имена разделов (Anthropic, Nvidia…) — это витрина, а вот апстримы клиенту знать незачем
+  for (const word of ['agentrouter', 'hcnsec', 'seekai', 'bluesminds', 'integrate\\.api\\.nvidia']) {
     if (new RegExp(word, 'i').test(text)) throw new Error('упоминание в config.mjs: ' + word);
   }
   return 'публичные имена, без упоминаний апстримов';
 });
+
 
 await check('setProviderKey + saveConfig (права 0600)', () => {
   setProviderKey(cfg, 'coderoom', 'sk-test-1234567890abcdef');
@@ -568,6 +604,135 @@ await check('неизвестный инструмент не роняет пр�
   return r.output.slice(0, 60);
 });
 
+console.log('\n── SSH ──');
+
+const SSH = mods.ssh;
+
+await check('parseTarget разбирает user@host:port', () => {
+  const a = SSH.parseTarget('root@10.0.0.5');
+  if (a.user !== 'root' || a.host !== '10.0.0.5' || a.port !== 22) throw new Error(JSON.stringify(a));
+  const b = SSH.parseTarget('deploy@example.com:2222');
+  if (b.user !== 'deploy' || b.port !== 2222) throw new Error(JSON.stringify(b));
+  const c = SSH.parseTarget('ssh://[::1]:2200');
+  if (c.host !== '::1' || c.port !== 2200) throw new Error('IPv6: ' + JSON.stringify(c));
+  for (const bad of ['', 'host:99999']) {
+    let threw = false;
+    try { SSH.parseTarget(bad); } catch { threw = true; }
+    if (!threw) throw new Error('принял мусор: ' + JSON.stringify(bad));
+  }
+  return 'user@host, порт, IPv6, отказ на мусоре';
+});
+
+await check('addHost/listHosts/removeHost сохраняются в конфиг', () => {
+  const c = loadConfig();
+  const h = SSH.addHost(c, { name: 'prod', host: '10.0.0.5', user: 'deploy', port: 2222 });
+  if (h.port !== 2222 || h.keyInstalled !== false) throw new Error('поля: ' + JSON.stringify(h));
+
+  const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  if (!saved.hosts?.prod) throw new Error('в конфиг не записался');
+
+  // перечитали с диска — сервер должен быть на месте
+  if (!SSH.getHost(loadConfig(), 'prod')) throw new Error('после перезагрузки пропал');
+
+  let threw = false;
+  try { SSH.addHost(c, { name: 'плохое имя!', host: 'x' }); } catch { threw = true; }
+  if (!threw) throw new Error('принял недопустимое имя');
+
+  SSH.markOk(c, 'prod');
+  if (!SSH.getHost(c, 'prod').keyInstalled) throw new Error('markOk не сработал');
+
+  if (!SSH.removeHost(c, 'prod')) throw new Error('не удалился');
+  if (SSH.removeHost(c, 'prod')) throw new Error('удалил дважды');
+  if (SSH.listHosts(loadConfig()).length) throw new Error('остался в конфиге');
+  return 'добавление, сохранение, markOk, удаление';
+});
+
+await check('ключ CodeRoom отдельный от ~/.ssh и внутри CODEROOM_HOME', () => {
+  const home = process.env.CODEROOM_HOME;
+  if (!SSH.KEY_FILE.startsWith(home)) throw new Error('ключ вне CODEROOM_HOME: ' + SSH.KEY_FILE);
+  if (!SSH.KNOWN_HOSTS.startsWith(home)) throw new Error('known_hosts вне CODEROOM_HOME');
+  if (/[\\/]\.ssh[\\/]id_(rsa|ed25519)$/.test(SSH.KEY_FILE.replace(home, ''))) throw new Error('лезет в личный ~/.ssh');
+  return path.relative(home, SSH.KEY_FILE).replace(/\\/g, '/');
+});
+
+const SSH_SRC = path.join(import.meta.dirname, '..', 'src', 'ssh.mjs');
+
+await check('probe: скрипт валиден для sh (цикл for не склеен через «;»)', () => {
+  // ловим регресс: строки, склеенные через «; », давали «do; printf» — ошибка синтаксиса bash
+  const src = fs.readFileSync(SSH_SRC, 'utf8');
+  const body = src.slice(src.indexOf('export async function probe'));
+  const join = /\]\.join\((['"])(.*?)\1\)/.exec(body);
+  if (!join) throw new Error('не нашёл склейку строк скрипта probe');
+  if (join[2] !== '\\n') throw new Error('строки скрипта склеены через «' + join[2] + '», нужен перевод строки');
+  if (/\bdo\s*;/.test(body)) throw new Error('в скрипте есть «do;» — sh такое не примет');
+  return 'join("\\n"), «do;» нет';
+});
+
+await check('useKey привязывает свой ключ и отсекает .pub', () => {
+  const c = loadConfig();
+  SSH.addHost(c, { name: 'own', host: '10.0.0.7', user: 'deploy' });
+
+  const keyFile = path.join(process.env.CODEROOM_HOME, 'my_key');
+  fs.writeFileSync(keyFile, 'PRIVATE', 'utf8');
+  fs.writeFileSync(keyFile + '.pub', 'ssh-ed25519 AAAA test', 'utf8');
+
+  const h = SSH.useKey(c, 'own', keyFile);
+  if (h.keyFile !== keyFile) throw new Error('ключ не сохранился: ' + h.keyFile);
+  if (loadConfig().hosts.own.keyFile !== keyFile) throw new Error('ключ не попал в конфиг');
+
+  let pubRejected = false;
+  try { SSH.useKey(c, 'own', keyFile + '.pub'); } catch { pubRejected = true; }
+  if (!pubRejected) throw new Error('.pub принят, а нужен приватный ключ');
+
+  let missingRejected = false;
+  try { SSH.useKey(c, 'own', keyFile + '-нет'); } catch { missingRejected = true; }
+  if (!missingRejected) throw new Error('несуществующий файл принят');
+
+  SSH.removeHost(c, 'own');
+  return 'привязка, отказ на .pub и на отсутствующий файл';
+});
+
+await check('checkKeyAuth проверяет только наш ключ (не чужой из агента)', () => {
+  // без keyOnly вход мог пройти по постороннему ключу — и «настроено» было бы ложью
+  const src = fs.readFileSync(SSH_SRC, 'utf8');
+  const fn = src.slice(src.indexOf('export async function checkKeyAuth'));
+  const body = fn.slice(0, fn.indexOf('\n}'));
+  if (!/keyOnly:\s*true/.test(body)) throw new Error('checkKeyAuth ходит без keyOnly');
+
+  const install = src.slice(src.indexOf('export async function installKey'));
+  if (!/chmod go-w ~/.test(install)) throw new Error('installKey не правит права на ~ (StrictModes)');
+  return 'keyOnly + chmod go-w ~';
+});
+
+await check('Ssh: список серверов и понятная ошибка на неизвестный', async () => {
+  const c = loadConfig();
+  const empty = await runTool('Ssh', { action: 'list' }, { ...ctx, cfg: c });
+  if (empty.error) throw new Error(empty.output);
+  if (!/Серверов нет/.test(empty.output)) throw new Error('пустой список: ' + empty.output.slice(0, 60));
+
+  SSH.addHost(c, { name: 'srv1', host: '10.0.0.9', user: 'root' });
+  const list = await runTool('Ssh', { action: 'list' }, { ...ctx, cfg: c });
+  if (!/srv1.*root@10\.0\.0\.9/s.test(list.output)) throw new Error('нет сервера: ' + list.output);
+
+  const miss = await runTool('Ssh', { host: 'нетtakого', command: 'ls' }, { ...ctx, cfg: c });
+  if (!miss.error || !/нет/i.test(miss.output)) throw new Error('невнятно: ' + miss.output);
+
+  SSH.removeHost(c, 'srv1');
+  return 'list + ошибка на неизвестный сервер';
+});
+
+await check('Ssh требует подтверждения и описывается в UI', () => {
+  const tool = toolByName('Ssh');
+  if (!tool.requiresExplicitApproval) throw new Error('выполняется без спроса');
+  if (!tool.mutating) throw new Error('не помечен mutating');
+  if (!mods.config.DEFAULT_CONFIG.permissions.ask.includes('Ssh(**)')) {
+    throw new Error('Ssh(**) нет в permissions.ask по умолчанию');
+  }
+  const d = mods.tools.describeCall('Ssh', { host: 'prod', command: 'systemctl restart api' });
+  if (!/prod/.test(d)) throw new Error('describeCall без сервера: ' + d);
+  return d;
+});
+
 console.log('\n── плагины и скилы ──');
 
 const { loadPlugins, expandCommand, skillsSummary } = mods.plugins;
@@ -708,7 +873,8 @@ console.log('\n── сессии ──');
 const { Session } = mods.session;
 
 await check('сессия сохраняется и читается', () => {
-  const s = new Session({ cwd: work, model: cfg.model, provider: 'agentrouter' });
+  const s = new Session({ cwd: work, model: cfg.model, provider: 'coderoom' });
+
   s.messages.push({ role: 'user', content: 'проверка записи' });
   s.messages.push({ role: 'assistant', content: 'ответ' });
   const file = s.save();
@@ -767,7 +933,8 @@ await check('Provider без ключа падает с понятным тек�
   empty.providers.coderoom.apiKey = '';
   const p = new Provider(empty, 'coderoom');
   try {
-    for await (const _ev of p.stream({ model: 'claude-opus-5', messages: [{ role: 'user', content: 'привет' }], maxTokens: 8 })) {
+    for await (const _ev of p.stream({ model: 'claude-opus-4-7', messages: [{ role: 'user', content: 'привет' }], maxTokens: 8 })) {
+
       throw new Error('запрос ушёл без ключа');
     }
     throw new Error('поток завершился без ошибки');
@@ -1112,6 +1279,8 @@ await check('--help и --version работают', async () => {
 await check('coderoom update сообщает о состоянии версии', async () => {
   const { execFileSync } = await import('node:child_process');
   const bin = path.join(import.meta.dirname, '..', 'bin', 'coderoom.mjs');
+  // кэш от предыдущей проверки подсунул бы «новую версию 99.0.0» — начинаем с чистого
+  fs.rmSync(path.join(process.env.CODEROOM_HOME, 'update-cache.json'), { force: true });
   const run = (...args) => {
     // недоступный реестр — законный повод для кода 1, нам важен текст
     try {
