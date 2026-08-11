@@ -7,13 +7,37 @@ export const CONFIG_DIR = process.env.CODEROOM_HOME
   ? path.resolve(process.env.CODEROOM_HOME)
   : path.join(os.homedir(), '.coderoom');
 
-export const VERSION = '1.1.1';
+export const VERSION = '1.1.2';
 
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions');
 export const GLOBAL_MEMORY = path.join(CONFIG_DIR, 'CODEROOM.md');
 
+// Разделы моделей — по ним строятся группы в /model и подсказки в UI.
+// Группируем по создателю модели (а не по «скорости»): так проще искать глазами,
+// и не приходится придумывать, чем «мощная» отличается от «прочей».
+// Порядок важен: так они и рисуются в селекторе.
+export const MODEL_TIERS = {
+  anthropic: { label: 'Anthropic', note: 'Claude — умеют инструменты',   order: 1 },
+  openai:    { label: 'ChatGPT',   note: 'GPT и GPT-OSS',                order: 2 },
+  nvidia:    { label: 'Nvidia',    note: 'Nemotron',                     order: 3 },
+  deepseek:  { label: 'DeepSeek',  note: 'сильные под код',              order: 4 },
+  google:    { label: 'Google',    note: 'Gemini, Gemma, CodeGemma',     order: 5 },
+  qwen:      { label: 'Qwen',      note: '',                             order: 6 },
+  zai:       { label: 'Z-AI',      note: 'GLM',                          order: 7 },
+  yi:        { label: '01-AI',     note: 'Yi',                           order: 8 },
+  other:     { label: 'Прочие',    note: 'роутеры и всё остальное',      order: 9 },
+};
+
+
 export const PROVIDER_PRESETS = {
+  // Единственный провайдер клиента — наш шлюз. Всё, что раньше ходило напрямую
+  // к чужим API, теперь идёт через него: клиент видит один ключ cr-… и публичные
+  // имена моделей, а какой апстрим отвечает — забота сервера (см. server/gateway.mjs).
+  //
+  // Пометка tools — из реальных замеров (/v1/chat/completions с tool_choice=required):
+  // tool_calls отдают только claude-opus-*/claude-sonnet-5, остальные молча игнорируют
+  // tools, поэтому для агента (правки файлов, bash) годятся не все — только чат/smallModel.
   coderoom: {
     id: 'coderoom',
     label: 'CodeRoom',
@@ -22,84 +46,108 @@ export const PROVIDER_PRESETS = {
     keyEnv: 'CODEROOM_KEY',
     keyPrefix: 'cr-',
     isGateway: true,
-    defaultModel: 'claude-opus-5',
+    defaultModel: 'nemotron-3-ultra-550b',
+    smallModel: 'nemotron-3-nano-30b',
     site: '',
     models: [
-      { id: 'claude-opus-5', label: 'Claude Opus 5', note: 'Флагман, для сложного кода', recommended: true },
-      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', note: 'Предыдущий флагман' },
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', note: 'Быстрая, для правок' },
-      { id: 'auto', label: 'Auto', note: 'Роутер: сам выбирает модель' },
-      { id: 'DeepSeek-V4-Flash', label: 'DeepSeek V4 Flash', note: 'Быстрая MoE' },
-      { id: 'DeepSeek-V4-Pro', label: 'DeepSeek V4 Pro', note: 'Сильная, для кода' },
-      { id: 'glm-5.1', label: 'GLM 5.1', note: 'Длинные задачи' },
-      { id: 'glm-5.2', label: 'GLM 5.2', note: 'Топ, но медленная' },
-      { id: 'kat-coder-pro-v2.5', label: 'KAT Coder Pro v2.5', note: 'Заточена под код' },
-      { id: 'Kimi-K2.6', label: 'Kimi K2.6' },
-      { id: 'MiniMax-M3', label: 'MiniMax M3', note: 'Мультимодальная' },
-      { id: 'Qwen3.5-397B-A17B', label: 'Qwen3.5 397B-A17B', note: 'Крупная MoE' },
-      { id: 'Qwen3.6-35B-A3B', label: 'Qwen3.6 35B-A3B', note: 'Лёгкая MoE' },
-      { id: 'sensenova-6.7-flash-lite', label: 'SenseNova 6.7 Flash Lite' },
-      { id: 'sensenova-u1-fast', label: 'SenseNova U1 Fast', note: 'Очень быстрая' },
-      { id: 'step-3.5-flash', label: 'Step 3.5 Flash' },
-      { id: 'step-3.5-flash-2603', label: 'Step 3.5 Flash (2603)' },
-      { id: 'step-3.7-flash', label: 'Step 3.7 Flash' },
-      { id: 'step-image-edit-2', label: 'Step Image Edit 2', note: 'Генерация картинок', chat: false },
-      { id: 'step-router-v1', label: 'Step Router v1', note: 'Роутер step/deepseek' },
-      { id: 'stepaudio-2.5-asr', label: 'StepAudio 2.5 ASR', note: 'Речь → текст', chat: false },
-      { id: 'stepaudio-2.5-chat', label: 'StepAudio 2.5 Chat', note: 'Голосовой чат' },
-      { id: 'stepaudio-2.5-realtime', label: 'StepAudio 2.5 Realtime', note: 'Аудио realtime', chat: false },
-      { id: 'stepaudio-2.5-tts', label: 'StepAudio 2.5 TTS', note: 'Текст → речь', chat: false },
-      { id: 'nemotron-3-ultra-550b', label: 'Nemotron 3 Ultra 550B', note: 'Флагман с рассуждением' },
-      { id: 'nemotron-3-super-120b', label: 'Nemotron 3 Super 120B', note: 'С рассуждением' },
-      { id: 'nemotron-3-nano-30b', label: 'Nemotron 3 Nano 30B', note: 'Быстрая' },
-      { id: 'nemotron-nano-3-30b', label: 'Nemotron Nano 3 30B' },
-      { id: 'nemotron-3-nano-omni', label: 'Nemotron 3 Nano Omni', note: 'Мультимодальная' },
-      { id: 'llama-nemotron-ultra-253b', label: 'Llama Nemotron Ultra 253B' },
-      { id: 'llama-nemotron-super-49b-v1.5', label: 'Llama Nemotron Super 49B v1.5' },
-      { id: 'llama-nemotron-super-49b', label: 'Llama Nemotron Super 49B' },
-      { id: 'llama-nemotron-70b', label: 'Llama Nemotron 70B' },
-      { id: 'nemotron-nano-9b-v2', label: 'Nemotron Nano 9B v2', note: 'Лёгкая' },
-      { id: 'nemotron-4-340b', label: 'Nemotron 4 340B' },
-      { id: 'gpt-oss-120b', label: 'GPT-OSS 120B' },
-      { id: 'gpt-oss-20b', label: 'GPT-OSS 20B', note: 'Лёгкая' },
-      { id: 'deepseek-v4-pro-alt', label: 'DeepSeek V4 Pro · alt', note: 'Сильная, для кода' },
-      { id: 'deepseek-v4-flash-alt', label: 'DeepSeek V4 Flash · alt', note: 'Быстрая' },
-      { id: 'deepseek-coder-6.7b', label: 'DeepSeek Coder 6.7B', note: 'Под код' },
-      { id: 'kimi-k2.6-alt', label: 'Kimi K2.6 · alt' },
-      { id: 'glm-5.2-alt', label: 'GLM 5.2 · alt' },
-      { id: 'minimax-m3-alt', label: 'MiniMax M3 · alt', note: 'Мультимодальная' },
-      { id: 'step-3.7-flash-alt', label: 'Step 3.7 Flash · alt' },
-      { id: 'llama-3.3-70b', label: 'Llama 3.3 70B' },
-      { id: 'llama-3.1-70b', label: 'Llama 3.1 70B' },
-      { id: 'mistral-large-2', label: 'Mistral Large 2' },
-      { id: 'mistral-medium-3.5', label: 'Mistral Medium 3.5' },
-      { id: 'codestral-22b', label: 'Codestral 22B', note: 'Под код' },
-      { id: 'mistral-nemotron', label: 'Mistral Nemotron' },
-      { id: 'gemma-4-31b', label: 'Gemma 4 31B' },
-      { id: 'gemma-3-12b', label: 'Gemma 3 12B' },
-      { id: 'palmyra-creative-122b', label: 'Palmyra Creative 122B', note: 'Тексты' },
-      { id: 'laguna-xs-2.1', label: 'Laguna XS 2.1' },
-      { id: 'inkling', label: 'Inkling' },
-      { id: 'starcoder2-15b', label: 'StarCoder2 15B', note: 'Под код' },
-      { id: 'jamba-1.5-large', label: 'Jamba 1.5 Large' },
-      { id: 'dbrx-instruct', label: 'DBRX Instruct' },
+      // ── Anthropic ──
+      { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', tier: 'anthropic', tools: true, recommended: true, note: 'Флагман. Инструменты ✓ (~19s)' },
+      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', tier: 'anthropic', tools: true, note: 'Top Claude Opus tier for the hardest reasoning, coding, and long-horizon agents' },
+      { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'anthropic', tools: true, note: 'Agent-ready GPT for coding and computer-use workflows' },
+      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'anthropic', tools: true, note: 'Дешевле Opus, инструменты ✓ (~12–28s)' },
+      { id: 'claude-sonnet', label: 'Claude Sonnet', tier: 'anthropic', note: 'Универсальная' },
+      { id: 'claude-haiku', label: 'Claude Haiku', tier: 'anthropic', note: 'Лёгкая и быстрая' },
+      { id: 'claude-fable-5', label: 'Claude Fable 5', tier: 'anthropic', tools: false, note: 'С tools зависает >75s — не брать для агента' },
+
+      // ── ChatGPT ──
+      { id: 'gpt-5-4', label: 'GPT-5.4', tier: 'openai', tools: false, note: 'Самая быстрая (~8.8s). Без инструментов' },
+      { id: 'gpt-5-5', label: 'GPT-5.5', tier: 'openai', tools: false, note: 'Быстрая (~9.6s). Без инструментов' },
+      { id: 'gpt-5-6-luna', label: 'GPT-5.6 Luna', tier: 'openai', tools: false, note: 'Быстрая (~11–16s). Без инструментов' },
+      { id: 'gpt-5.6', label: 'GPT-5.6', tier: 'openai', tools: false, note: 'Без инструментов (~15–52s, нестабильно)' },
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', tier: 'openai', tools: false, note: 'Frontier GPT-5.6 model for complex professional work, coding, and agentic workflows' },
+      { id: 'gpt-5-6-terra', label: 'GPT-5.6 Terra', tier: 'openai', tools: false, note: 'Без инструментов (~12–47s)' },
+      { id: 'gpt-oss-120b', label: 'GPT-OSS 120B', tier: 'openai', note: 'Открытая, крупная' },
+      { id: 'gpt-oss-20b', label: 'GPT-OSS 20B', tier: 'openai', note: 'Открытая, лёгкая' },
+
+      // ── Nvidia ──
+      { id: 'nemotron-3-ultra-550b', label: 'Nemotron 3 Ultra 550B', tier: 'nvidia', note: 'Флагман с рассуждением', recommended: true },
+      { id: 'nemotron-3-super-120b', label: 'Nemotron 3 Super 120B', tier: 'nvidia', note: 'С рассуждением' },
+      { id: 'nemotron-4-340b', label: 'Nemotron 4 340B', tier: 'nvidia' },
+      { id: 'nemotron-3-nano-30b', label: 'Nemotron 3 Nano 30B', tier: 'nvidia', note: 'Быстрая, для правок' },
+      { id: 'nemotron-nano-3-30b', label: 'Nemotron Nano 3 30B', tier: 'nvidia' },
+      { id: 'nemotron-nano-9b-v2', label: 'Nemotron Nano 9B v2', tier: 'nvidia', note: 'Лёгкая' },
+      { id: 'nemotron-3-nano-omni', label: 'Nemotron 3 Nano Omni', tier: 'nvidia', note: 'Мультимодальная' },
+      { id: 'llama-nemotron-ultra-253b', label: 'Llama Nemotron Ultra 253B', tier: 'nvidia' },
+      { id: 'llama-nemotron-super-49b-v1.5', label: 'Llama Nemotron Super 49B v1.5', tier: 'nvidia' },
+      { id: 'llama-nemotron-super-49b', label: 'Llama Nemotron Super 49B', tier: 'nvidia' },
+      { id: 'llama-nemotron-70b', label: 'Llama Nemotron 70B', tier: 'nvidia' },
+
+      // ── DeepSeek ──
+      { id: 'DeepSeek-V4-Pro', label: 'DeepSeek V4 Pro', tier: 'deepseek', note: 'Сильная, для кода' },
+      { id: 'DeepSeek-V4-Flash', label: 'DeepSeek V4 Flash', tier: 'deepseek', note: 'Быстрая MoE' },
+      { id: 'DeepSeek-V4-Flash-0731', label: 'DeepSeek V4 Flash (0731)', tier: 'deepseek', note: 'Снапшот 0731' },
+
+      // ── Google ──
+      { id: 'gemini-3-flash', label: 'Gemini 3 Flash', tier: 'google', tools: false, note: 'Быстрая (~17s). Без инструментов' },
+      { id: 'gemini-3-1-pro', label: 'Gemini 3.1 Pro', tier: 'google', tools: false, note: 'Без инструментов, бывает 500/таймаут' },
+      { id: 'gemini-3-pro', label: 'Gemini 3 Pro', tier: 'google', tools: false, note: 'Медленная (до ~74s), бывает 500' },
+      { id: 'gemma-4', label: 'Gemma 4', tier: 'google' },
+      { id: 'gemma-4-26b', label: 'Gemma 4 26B', tier: 'google' },
+      { id: 'gemma-3-12b', label: 'Gemma 3 12B', tier: 'google', note: 'Лёгкая' },
+      { id: 'gemma-2-2b', label: 'Gemma 2 2B', tier: 'google', note: 'Совсем маленькая' },
+      { id: 'codegemma-7b', label: 'CodeGemma 7B', tier: 'google', note: 'Под код' },
+      { id: 'codegemma-1.1-7b', label: 'CodeGemma 1.1 7B', tier: 'google', note: 'Под код' },
+      { id: 'diffusiongemma-26b', label: 'DiffusionGemma 26B A4B', tier: 'google', note: 'Диффузионная' },
+
+      // ── Qwen ──
+      { id: 'qwen3-coder-480b', label: 'Qwen3 Coder 480B-A35B', tier: 'qwen', note: 'Заточена под код' },
+      { id: 'qwen3-next-80b', label: 'Qwen3 Next 80B-A3B', tier: 'qwen' },
+      { id: 'qwen3.5-122b', label: 'Qwen3.5 122B-A10B', tier: 'qwen' },
+      { id: 'Qwen3.5-397B-A17B', label: 'Qwen3.5 397B-A17B', tier: 'qwen', note: 'Крупная MoE' },
+      { id: 'qwen3.5-397b-alt', label: 'Qwen3.5 397B-A17B · alt', tier: 'qwen', note: 'Крупная MoE' },
+      { id: 'Qwen3.6-35B-A3B', label: 'Qwen3.6 35B-A3B', tier: 'qwen', note: 'Лёгкая MoE' },
+      { id: 'qwen2.5', label: 'Qwen2.5', tier: 'qwen' },
+
+      // ── Z-AI ──
+      { id: 'glm-5.2', label: 'GLM 5.2', tier: 'zai', note: 'Топ, но медленная' },
+      { id: 'glm-5.2-alt', label: 'GLM 5.2 · alt', tier: 'zai' },
+      { id: 'glm-5.1', label: 'GLM 5.1', tier: 'zai', note: 'Длинные задачи' },
+      { id: 'glm-5.1-alt', label: 'GLM 5.1 · alt', tier: 'zai' },
+
+      // ── 01-AI ──
+      { id: 'yi-large', label: 'Yi Large', tier: 'yi' },
+
+      // ── Прочие: роутеры и всё, что не попало в разделы выше ──
+      { id: 'auto', label: 'Auto', tier: 'other', note: 'Роутер: сам выбирает модель', recommended: true },
+      { id: 'step-router-v1', label: 'Step Router v1', tier: 'other', note: 'Роутер step/deepseek' },
+      { id: 'grok-4-5', label: 'Grok 4.5', tier: 'other', tools: false, note: 'Без инструментов (~13–57s)' },
+      { id: 'kat-coder-pro-v2.5', label: 'KAT Coder Pro v2.5', tier: 'other', note: 'Заточена под код' },
+      { id: 'Kimi-K2.6', label: 'Kimi K2.6', tier: 'other' },
+      { id: 'MiniMax-M3', label: 'MiniMax M3', tier: 'other', note: 'Мультимодальная' },
+      { id: 'sensenova-u1-fast', label: 'SenseNova U1 Fast', tier: 'other', note: 'Очень быстрая' },
+      { id: 'sensenova-6.7-flash-lite', label: 'SenseNova 6.7 Flash Lite', tier: 'other', note: 'Лёгкая' },
+      { id: 'step-3.7-flash', label: 'Step 3.7 Flash', tier: 'other' },
+      { id: 'step-3.5-flash', label: 'Step 3.5 Flash', tier: 'other' },
+      { id: 'step-3.5-flash-2603', label: 'Step 3.5 Flash (2603)', tier: 'other' },
     ],
   },
 };
 
+
 export const DEFAULT_CONFIG = {
   version: 1,
   provider: 'coderoom',
-  model: 'claude-opus-5',
-  smallModel: 'gpt-5.6-sol',
+  model: 'auto',
+  smallModel: 'nemotron-3-nano-30b',
   theme: 'claude',
   webTheme: 'aurora',
   lang: 'ru',
   providers: {},
+  hosts: {},          // серверы для SSH: имя → { host, user, port, keyFile }
   permissions: {
     mode: 'yolo',
     allow: ['Read(**)', 'Glob(**)', 'Grep(**)', 'List(**)', 'Todo(**)'],
-    ask: ['Write(**)', 'Edit(**)', 'Bash(**)', 'WebFetch(**)'],
+    ask: ['Write(**)', 'Edit(**)', 'Bash(**)', 'WebFetch(**)', 'Ssh(**)'],
     deny: [],
   },
   security: {
@@ -188,7 +236,7 @@ export function loadConfig({ cwd = process.cwd() } = {}) {
   }
 
   if (/^\d+$/.test(String(cfg.model ?? ''))) {
-    cfg.model = PROVIDER_PRESETS[cfg.provider]?.defaultModel || 'claude-opus-5';
+    cfg.model = PROVIDER_PRESETS[cfg.provider]?.defaultModel || 'auto';
   }
 
   return cfg;
