@@ -7,7 +7,7 @@ export const CONFIG_DIR = process.env.CODEROOM_HOME
   ? path.resolve(process.env.CODEROOM_HOME)
   : path.join(os.homedir(), '.coderoom');
 
-export const VERSION = '1.1.2';
+export const VERSION = '1.1.3';
 
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions');
@@ -23,10 +23,10 @@ export const MODEL_TIERS = {
   nvidia:    { label: 'Nvidia',    note: 'Nemotron',                     order: 3 },
   deepseek:  { label: 'DeepSeek',  note: 'сильные под код',              order: 4 },
   google:    { label: 'Google',    note: 'Gemini, Gemma, CodeGemma',     order: 5 },
-  qwen:      { label: 'Qwen',      note: '',                             order: 6 },
-  zai:       { label: 'Z-AI',      note: 'GLM',                          order: 7 },
-  yi:        { label: '01-AI',     note: 'Yi',                           order: 8 },
-  other:     { label: 'Прочие',    note: 'роутеры и всё остальное',      order: 9 },
+  qwen:      { label: 'Qwen',      note: '',                                      order: 6 },
+  zai:       { label: 'Z-AI',      note: 'GLM',                                   order: 7 },
+  yi:        { label: '01-AI',     note: 'Yi',                                    order: 8 },
+  other:     { label: 'Прочие',    note: 'Grok, NN, роутеры и всё остальное',      order: 9 },
 };
 
 
