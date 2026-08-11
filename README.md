@@ -4,12 +4,15 @@
 Читает и правит файлы, запускает команды, ищет по проекту — с твоего разрешения.
 Без внешних зависимостей: только Node.js ≥ 20.
 
-**58 моделей по одному ключу:** Claude Opus 5/4.8, GPT-5.6, Nemotron 3 Ultra, DeepSeek V4,
-Qwen, GLM, Kimi, Llama, Codestral и др. Ключи провайдеров держит шлюз — тебе нужен только
+**59 моделей по одному ключу:** Claude Opus 4.7 / Sonnet 5, GPT-5.6, GPT-OSS, Nemotron 3 Ultra,
+DeepSeek V4, Gemini и Gemma, Qwen, GLM, Yi и др. — разложены по разделам (Anthropic, ChatGPT,
+Nvidia, DeepSeek, Google, Qwen, Z-AI, 01-AI). Ключи провайдеров держит шлюз — тебе нужен только
 свой ключ `cr-…`.
 
+**Новое:** добавлены SeekAI модели `claude-opus-5`, `gpt-5.6-sol` и `claude-opus-4-8`.
+
 ```
-  ▗▄▄▖ CodeRoom v1.0.1
+  ▗▄▄▖ CodeRoom v1.1.3
   локальный агент для кода
 
   ⏺ Read(src/app.js)
@@ -138,9 +141,10 @@ coderoom -c                       # продолжить последнюю се
 
 ### Слэш-команды (в диалоге)
 
-`/help` `/provider` `/model` `/theme` `/mode` `/key` `/config` `/status` `/clear`
+`/help` `/provider` `/model` `/gateway` `/theme` `/mode` `/key` `/config` `/status` `/clear`
 `/compact` `/diff` `/todo` `/context` `/export` `/cwd` `/sessions` `/resume <id>`
-`/memory` `/init` `/skills` `/skill <имя>` `/plugins` `/web` `/cost` `/update` `/trust` `/exit`
+`/memory` `/init` `/skills` `/skill <имя>` `/plugins` `/ssh` `/web` `/cost` `/update` `/trust` `/exit`
+
 
 Плюс команды плагинов (`/commit`, `/code-review`, `/feature-dev`, …) — они в том же списке.
 
@@ -244,12 +248,40 @@ coderoom --web
 
 ## Инструменты агента
 
-`Read` · `Write` · `Edit` · `List` · `Glob` · `Grep` · `Bash` · `Todo` · `WebFetch` · `Skill`
+`Read` · `Write` · `Edit` · `List` · `Glob` · `Grep` · `Bash` · `Todo` · `WebFetch` · `Skill` · `Ssh`
 
 Правки файлов показываются диффом и требуют подтверждения (в `default`).
 Секреты (`sk-...`, приватные ключи, токены) маскируются в выводе перед отправкой модели.
+`Ssh` спрашивает разрешение всегда — даже в `acceptEdits`.
 
 ---
+
+## Серверы (SSH)
+
+Агент умеет работать на удалённой машине: `Ssh` выполняет там команды, а `/ssh` в диалоге
+заводит серверы и настраивает вход. Пускают двумя способами — по ключу и по паролю.
+
+```bash
+/ssh add prod deploy@10.0.0.5:2222   # добавить сервер
+/ssh setup prod                      # положить ключ CodeRoom на сервер (спросит пароль один раз)
+/ssh password prod                   # запомнить пароль сервера (файл 0600, не в config.json)
+/ssh auth prod key|password|auto     # чем заходить: ключ, пароль или ключ с запасным паролем
+/ssh sshd prod                       # включить на сервере оба способа входа сразу
+/ssh usekey prod ~/.ssh/id_ed25519   # взять свой ключ вместо созданного CodeRoom
+/ssh info prod                       # что за сервер: ОС, память, что установлено
+/ssh prod                            # живая сессия, «exit» — выйти
+```
+
+- Ключ CodeRoom лежит отдельно от личного `~/.ssh` — в `~/.coderoom/ssh/`.
+- Пароли хранятся в отдельном файле с правами `0600`, не в общем конфиге, и маскируются в выводе.
+- `/ssh sshd <имя>` правит `sshd_config` на сервере (включает `PubkeyAuthentication` и
+  `PasswordAuthentication`), сохраняет копию прежнего файла и перезапускает `sshd`.
+  Закрыть вход по паролю обратно: `/ssh sshd <имя> nopassword`.
+- Для подстановки сохранённого пароля нужен `sshpass` (`apt install sshpass` /
+  `brew install hudochenkov/sshpass/sshpass`); живая сессия `/ssh <имя>` работает и без него.
+
+---
+
 
 ## Плагины и навыки (skills)
 
@@ -295,18 +327,24 @@ coderoom --web
 
 ## Модели
 
-Все модели доступны по **одному ключу** `cr-…` — их **58**:
+Все модели доступны по **одному ключу** `cr-…` — их **59**, разложены по разделам:
 
-- **Claude Opus 5 / 4.8** — флагманы для сложного кода
-- **GPT-5.6 Sol**, **GPT-OSS 120B/20B** — быстрые, для правок
-- **Nemotron 3 Ultra/Super/Nano** — с рассуждением
-- **DeepSeek V4 Pro/Flash**, **Qwen3.5/3.6**, **GLM 5.1/5.2**, **Kimi K2.6**, **MiniMax M3**
-- **Codestral**, **StarCoder2**, **KAT Coder**, **DeepSeek Coder** — заточены под код
-- **Llama 3.x**, **Mistral**, **Gemma**, **Jamba**, **Palmyra** и другие
-- `auto` — роутер, сам подбирает модель под задачу
+| Раздел | Модели |
+|---|---|
+| **Anthropic** | Claude Opus 4.7, Sonnet 5, Sonnet, Haiku, Fable 5 |
+| **ChatGPT** | GPT-5.4 / 5.5 / 5.6 (Luna, Terra), GPT-OSS 120B/20B |
+| **Nvidia** | Nemotron 3 Ultra/Super/Nano, Llama Nemotron — с рассуждением |
+| **DeepSeek** | DeepSeek V4 Pro / Flash |
+| **Google** | Gemini 3 Pro/Flash, Gemma 4 и 3, CodeGemma |
+| **Qwen** | Qwen3 Coder 480B, Qwen3.5/3.6, Qwen2.5 |
+| **Z-AI** | GLM 5.1, GLM 5.2 |
+| **01-AI** | Yi Large |
+| **Прочие** | `auto` (роутер), Kimi K2.6, MiniMax M3, KAT Coder, Grok, SenseNova, Step |
 
-Выбор — команда `/model` (меню с поиском и описаниями) или флаг `-m`. Модели для картинок
-и аудио помечены `⊘ не для чата`.
+Выбор — команда `/model` (меню с поиском, разделами и описаниями) или флаг `-m`.
+В списке только чат-модели: генерация картинок и аудио убрана. Модели, которые не умеют
+tool-calling, помечены `⚠ без инструментов` — для агента (правки, bash) годятся не все.
+
 
 Ключ задаётся мастером при первом запуске или переменной `CODEROOM_KEY`.
 Свой шлюз — `CODEROOM_BASE_URL` или команда `/gateway <url>`.
