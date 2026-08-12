@@ -317,6 +317,11 @@ export function createInput({
     },
     setValue(v) { buf = String(v ?? ''); pos = buf.length; computeSuggestions(); render(); },
     setCommands(list) { commands = list ?? []; },
+    setPrompt(value) {
+      PROMPT = String(value ?? '  ' + t.symbols.prompt + ' ');
+      PROMPT_W = visLen(PROMPT);
+      if (active) render();
+    },
     setTheme(next) {
       t = next;
       PROMPT = '  ' + t.symbols.prompt + ' ';

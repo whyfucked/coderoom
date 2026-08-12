@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { safeResolve, redactSecrets, globToRegExp } from './permissions.mjs';
+import { listHosts, getHost, runRemote, getHostPassword } from './ssh.mjs';
 import { loadPlugins } from './plugins.mjs';
 
 const MAX_READ_BYTES = 400_000;
@@ -603,9 +604,59 @@ export const SkillTool = {
   },
 };
 
+export const SshTool = {
+  name: 'Ssh',
+  description: 'Инструмент для управления SSH-серверами и удалёнными командами.',
+  mutating: true,
+  requiresExplicitApproval: true,
+  schema: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', description: 'Действие, например list' },
+      host: { type: 'string', description: 'Имя сервера из конфига' },
+      command: { type: 'string', description: 'Команда для выполнения на сервере' },
+    },
+  },
+  async run(args, { cfg }) {
+    const action = String(args?.action ?? '').trim().toLowerCase();
+    if (action === 'list' || (!args?.host && !args?.command)) {
+      const hosts = listHosts(cfg);
+      if (!hosts.length) return { output: 'Серверов нет.' };
+      return {
+        output: hosts
+          .map((h) => `${h.name} ${h.user}@${h.host}:${h.port}`)
+          .join('\n'),
+      };
+    }
+
+    if (!args?.host) {
+      throw new Error('Нужно указать host');
+    }
+
+    const host = getHost(cfg, args.host);
+    if (!host) {
+      throw new Error(`Сервер «${args.host}» не найден`);
+    }
+
+    if (!args.command) {
+      return { output: `Сервер ${host.name}: ${host.user}@${host.host}:${host.port}` };
+    }
+
+    const password = host.auth === 'password' ? getHostPassword(host.name) : undefined;
+    const result = runRemote(host, String(args.command), { password });
+    if (result.error) {
+      throw new Error(result.error.message || String(result.error));
+    }
+    const output = [`stdout:`, result.stdout.trim() || '(нет вывода)'];
+    if (result.stderr) output.push(`stderr:`, result.stderr.trim());
+    output.push(`exitCode: ${result.code}`);
+    return { output: output.join('\n') };
+  },
+};
+
 export const ALL_TOOLS = [
   ReadTool, WriteTool, EditTool, ListTool,
-  GlobTool, GrepTool, BashTool, TodoTool, WebFetchTool, SkillTool,
+  GlobTool, GrepTool, BashTool, TodoTool, WebFetchTool, SkillTool, SshTool,
 ];
 
 export function toolByName(name) {
@@ -637,6 +688,10 @@ export function describeCall(name, args) {
       return `Skill(${args?.name ?? '?'})`;
     case 'Todo':
       return `Todo(${args?.todos?.length ?? 0} задач)`;
+    case 'Ssh':
+      return args?.host
+        ? `Ssh(${args.host}${args.command ? `, ${args.command}` : ''})`
+        : 'Ssh(list)';
     default:
       return name;
   }

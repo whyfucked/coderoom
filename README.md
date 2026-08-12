@@ -12,7 +12,7 @@ Nvidia, DeepSeek, Google, Qwen, Z-AI, 01-AI). Ключи провайдеров 
 **Новое:** добавлены SeekAI модели `claude-opus-5`, `gpt-5.6-sol` и `claude-opus-4-8`.
 
 ```
-  ▗▄▄▖ CodeRoom v1.1.3
+  ▗▄▄▖ CodeRoom v1.1.4
   локальный агент для кода
 
   ⏺ Read(src/app.js)
@@ -36,7 +36,7 @@ npm install -g coderoom-cli
 
 ```bash
 npm install -g .                      # из папки проекта
-npm install -g coderoom-cli-1.0.1.tgz # из скачанного архива
+npm install -g coderoom-cli-version.tgz # из скачанного архива
 ```
 
 После этого в любом окне cmd работает:

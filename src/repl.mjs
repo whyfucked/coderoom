@@ -21,6 +21,11 @@ import {
 import { changeKey, VERSION } from './onboarding.mjs';
 import { loadPlugins, expandCommand } from './plugins.mjs';
 import {
+  addHost, removeHost, listHosts, getHost, useKey, markOk, parseTarget,
+  ensureKeyPair, copyPublicKey, setHostPassword, getHostPassword, setAuthMode, configureSshd,
+  KEY_FILE, runRemote, connectRemote, connectSftp,
+} from './ssh.mjs';
+import {
   checkForUpdates, shouldPrompt, runUpdate, updateCommand, updateSettings,
   snoozeUpdate, skipVersion, setUpdateCheck, setAutoInstall, resetUpdateSnooze, detectInstall,
 } from './update-checker.mjs';
@@ -51,6 +56,7 @@ export class Repl {
       cwd,
       ui: this.#buildUi(),
     });
+    this.sshHost = null;
   }
 
 
@@ -225,6 +231,7 @@ export class Repl {
       skills:  { desc: 'навыки (skills) агента',       run: () => this.#cmdSkills() },
       skill:   { desc: 'применить навык: /skill <имя> [задача]', run: (a) => this.#cmdSkill(a) },
       plugins: { desc: 'плагины и их команды',         run: () => this.#cmdPlugins() },
+      ssh:     { desc: 'управление SSH-серверами: /ssh list|add|remove|info|usekey|markok|setup|connect', run: (a) => this.#cmdSsh(a) },
       update:  { desc: 'обновление: /update [now|auto|off|on]', run: (a) => this.#cmdUpdate(a) },
       trust:   { desc: 'не спрашивать разрешения: /trust [on|off]', run: (a) => this.#cmdTrust(a) },
       exit:    { desc: 'выход',                        run: () => { this.exiting = true; } },
@@ -798,6 +805,241 @@ export class Repl {
     stdout.write(`\n  ${t.muted('Команды плагинов работают как слэш-команды (см. /help).')}\n\n`);
   }
 
+  #cmdSsh(arg) {
+    const t = this.t;
+    const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
+    const action = parts[0]?.toLowerCase();
+
+    if (!action || action === 'list') {
+      const hosts = listHosts(this.cfg);
+      if (!hosts.length) {
+        stdout.write(`  ${t.muted('Серверов нет.')}
+  ${t.muted('Добавь сервер: /ssh add <имя> <user@host:port>')}
+\n`);
+        return;
+      }
+      stdout.write('\n');
+      for (const h of hosts) {
+        stdout.write(`  ${t.primary(h.name)} ${t.muted(`${h.user}@${h.host}:${h.port}`)}${h.keyInstalled ? t.success(' · ключ установлен') : ''}\n`);
+      }
+      stdout.write('\n');
+      return;
+    }
+
+    if (action === 'add') {
+      const [name, target] = parts.slice(1);
+      if (!name || !target) {
+        stdout.write(`  ${t.error('Использование:')} /ssh add <имя> <user@host:port>\n\n`);
+        return;
+      }
+      try {
+        const parsed = parseTarget(target);
+        addHost(this.cfg, { name, host: parsed.host, user: parsed.user, port: parsed.port });
+        stdout.write(`  ${t.success('✓')} Сервер ${t.primary(name)} добавлен: ${parsed.user}@${parsed.host}:${parsed.port}\n\n`);
+      } catch (e) {
+        stdout.write(`  ${t.error('Ошибка:')} ${e.message}\n\n`);
+      }
+      return;
+    }
+
+    if (action === 'remove' || action === 'rm') {
+      const name = parts[1];
+      if (!name) {
+        stdout.write(`  ${t.error('Использование:')} /ssh remove <имя>\n\n`);
+        return;
+      }
+      if (!removeHost(this.cfg, name)) {
+        stdout.write(`  ${t.error('Сервер не найден:')} ${name}\n\n`);
+        return;
+      }
+      stdout.write(`  ${t.success('✓')} Сервер ${t.primary(name)} удалён\n\n`);
+      return;
+    }
+
+    if (action === 'info') {
+      const name = parts[1];
+      if (!name) {
+        stdout.write(`  ${t.error('Использование:')} /ssh info <имя>\n\n`);
+        return;
+      }
+      const host = getHost(this.cfg, name);
+      if (!host) {
+        stdout.write(`  ${t.error('Сервер не найден:')} ${name}\n\n`);
+        return;
+      }
+      stdout.write(`\n  ${t.primary(host.name)}\n`);
+      stdout.write(`    ${t.muted('host:')} ${host.user}@${host.host}:${host.port}\n`);
+      stdout.write(`    ${t.muted('key:')} ${host.keyFile ? host.keyFile : 'не привязан'}\n`);
+      stdout.write(`    ${t.muted('auth:')} ${host.auth || 'auto'}\n`);
+      stdout.write(`    ${t.muted('status:')} ${host.keyInstalled ? 'ключ установлен' : 'ключ не установлен'}\n\n`);
+      return;
+    }
+
+    if (action === 'usekey') {
+      const [_, name, keyFile] = parts;
+      if (!name || !keyFile) {
+        stdout.write(`  ${t.error('Использование:')} /ssh usekey <имя> <путь_к_ключу>\n\n`);
+        return;
+      }
+      try {
+        useKey(this.cfg, name, keyFile);
+        stdout.write(`  ${t.success('✓')} Ключ подключён к ${t.primary(name)}\n\n`);
+      } catch (e) {
+        stdout.write(`  ${t.error('Ошибка:')} ${e.message}\n\n`);
+      }
+      return;
+    }
+
+    if (action === 'password') {
+      const [_, name, ...passParts] = parts;
+      const password = passParts.join(' ').trim();
+      if (!name || !password) {
+        stdout.write(`  ${t.error('Использование:')} /ssh password <имя> <пароль>\n\n`);
+        return;
+      }
+      try {
+        setHostPassword(this.cfg, name, password);
+        stdout.write(`  ${t.success('✓')} Пароль сохранён для ${t.primary(name)}\n\n`);
+      } catch (e) {
+        stdout.write(`  ${t.error('Ошибка:')} ${e.message}\n\n`);
+      }
+      return;
+    }
+
+    if (action === 'auth') {
+      const [_, name, mode] = parts;
+      if (!name || !mode) {
+        stdout.write(`  ${t.error('Использование:')} /ssh auth <имя> <key|password|auto>\n\n`);
+        return;
+      }
+      try {
+        setAuthMode(this.cfg, name, mode);
+        stdout.write(`  ${t.success('✓')} Способ входа для ${t.primary(name)}: ${mode}\n\n`);
+      } catch (e) {
+        stdout.write(`  ${t.error('Ошибка:')} ${e.message}\n\n`);
+      }
+      return;
+    }
+
+    if (action === 'setup') {
+      const name = parts[1];
+      if (!name) {
+        stdout.write(`  ${t.error('Использование:')} /ssh setup <имя>\n\n`);
+        return;
+      }
+      const host = getHost(this.cfg, name);
+      if (!host) {
+        stdout.write(`  ${t.error('Сервер не найден:')} ${name}\n\n`);
+        return;
+      }
+      try {
+        const password = getHostPassword(name);
+        const allowPassword = host.auth !== 'key';
+        ensureKeyPair();
+        copyPublicKey(host, KEY_FILE, password);
+        configureSshd(host, allowPassword, { password });
+        markOk(this.cfg, name);
+        stdout.write(`  ${t.success('✓')} Сервис настроен и ключ установлен на ${t.primary(name)}\n`);
+        stdout.write(`  ${t.muted('Теперь можно подключаться:')} /ssh connect ${name}\n\n`);
+      } catch (e) {
+        stdout.write(`  ${t.error('Ошибка:')} ${e.message}\n\n`);
+      }
+      return;
+    }
+
+    if (action === 'connect') {
+      const name = parts[1];
+      const command = parts.slice(2).join(' ').trim();
+      if (!name) {
+        stdout.write(`  ${t.error('Использование:')} /ssh connect <имя> [sftp|<команда>]\n\n`);
+        return;
+      }
+      const host = getHost(this.cfg, name);
+      if (!host) {
+        stdout.write(`  ${t.error('Сервер не найден:')} ${name}\n\n`);
+        return;
+      }
+      const password = host.auth === 'password' ? getHostPassword(name) : undefined;
+
+      if (command === 'sftp') {
+        stdout.write(`  ${t.muted('Открываю SFTP на')} ${t.primary(host.name)}\n`);
+        try {
+          connectSftp(host, { password });
+          stdout.write('\n');
+        } catch (e) {
+          stdout.write(`\n  ${t.error('Ошибка SFTP:')} ${e.message}\n\n`);
+        }
+        return;
+      }
+
+      if (!command) {
+        try {
+          if (!host.keyInstalled) {
+            stdout.write(`  ${t.muted('Сервер не настроен, выполняю подготовку...')}\n`);
+            ensureKeyPair();
+            copyPublicKey(host, KEY_FILE, password);
+            configureSshd(host, host.auth !== 'key', { password });
+            markOk(this.cfg, name);
+            stdout.write(`  ${t.success('✓')} Сервер ${t.primary(name)} подготовлен\n`);
+          }
+          this.sshHost = host;
+          this.input.setPrompt(`  [ssh:${host.name}] `);
+          this.input.notify(`SSH режим: вводи команды для ${host.name}, /ssh disconnect для выхода.`);
+          stdout.write(`  ${t.success('✓')} Подключено к ${t.primary(host.name)}. Вводи команды, чтобы выполнять на сервере.\n\n`);
+        } catch (e) {
+          stdout.write(`  ${t.error('Ошибка SSH:')} ${e.message}\n\n`);
+        }
+        return;
+      }
+
+      try {
+        stdout.write(`  ${t.muted('Выполняю на')} ${t.primary(host.name)} (${host.user}@${host.host}:${host.port})\n`);
+        const result = runRemote(host, command, { password });
+        if (result.error) throw result.error;
+        stdout.write(`\n  ${t.muted('stdout:')}\n`);
+        stdout.write(`  ${result.stdout.trim() || '(нет вывода)'}\n`);
+        if (result.stderr) stdout.write(`  ${t.muted('stderr:')}\n  ${result.stderr.trim()}\n`);
+        stdout.write(`\n`);
+      } catch (e) {
+        stdout.write(`  ${t.error('Ошибка SSH:')} ${e.message}\n\n`);
+      }
+      return;
+    }
+
+    const host = getHost(this.cfg, action);
+    if (host) {
+      if (parts.length === 1) {
+        stdout.write(`  ${t.error('Используй:')} /ssh connect ${host.name} <команда>\n`);
+        stdout.write(`  ${t.muted('Пример:')} /ssh connect ${host.name} "ls -la /var/www"\n\n`);
+        return;
+      }
+      const command = parts.slice(1).join(' ');
+      try {
+        const result = runRemote(host, command, { password: host.auth === 'password' ? getHostPassword(action) : undefined });
+        if (result.error) throw result.error;
+        stdout.write(`\n  ${t.muted('stdout:')}\n`);
+        stdout.write(`  ${result.stdout.trim() || '(нет вывода)'}\n`);
+        if (result.stderr) stdout.write(`  ${t.muted('stderr:')}\n  ${result.stderr.trim()}\n`);
+        stdout.write('\n');
+      } catch (e) {
+        stdout.write(`  ${t.error('Ошибка SSH:')} ${e.message}\n\n`);
+      }
+      return;
+    }
+
+    if (action === 'disconnect' || action === 'exit') {
+      if (!this.sshHost) {
+        stdout.write(`  ${t.error('SSH-сессия не активна')}\n\n`);
+        return;
+      }
+      this.#endSshSession();
+      stdout.write(`  ${t.success('✓')} SSH-сессия завершена\n\n`);
+      return;
+    }
+
+    stdout.write(`  ${t.error('Неизвестная операция:')} ${action}\n  ${t.muted('Доступно: list, add, remove, rm, info, usekey, markok, password, auth, setup, connect, disconnect')}\n\n`);
+  }
+
   #cmdCost() {
     const t = this.t;
     const u = this.session.usage;
@@ -1099,6 +1341,11 @@ export class Repl {
         continue;
       }
 
+      if (this.sshHost) {
+        await this.#handleSshInput(input);
+        continue;
+      }
+
       await this.#handleMessage(input);
     }
 
@@ -1173,6 +1420,35 @@ export class Repl {
       if (e.status === 401) stdout.write(`  ${t.muted('Сменить ключ: /key')}\n`);
       stdout.write('\n');
     }
+  }
+
+  async #handleSshInput(input) {
+    const t = this.t;
+    if (!this.sshHost) return;
+    if (input === 'exit' || input === 'disconnect') {
+      this.#endSshSession();
+      stdout.write(`  ${t.success('✓')} SSH-сессия завершена\n\n`);
+      return;
+    }
+
+    const host = this.sshHost;
+    const task =
+      `Ты подключён к серверу ${host.name} (${host.user}@${host.host}:${host.port}). ` +
+      `Пользователь пишет задачу для удалённой машины. Используй инструмент Ssh, чтобы выполнить её. ` +
+      `Если нужно запустить команду на сервере, сформируй один вызов Ssh(action:\"connect\", host:\"${host.name}\", command:\"...\"). ` +
+      `Не отвечай просто текстом, если задача подразумевает выполнение на сервере. ` +
+      `Задача: ${input}`;
+
+    try {
+      await this.#handleMessage(task);
+    } catch (e) {
+      stdout.write(`  ${t.error('Ошибка SSH:')} ${e.message}\n\n`);
+    }
+  }
+
+  #endSshSession() {
+    this.sshHost = null;
+    if (this.input) this.input.setPrompt('  ' + this.t.symbols.prompt + ' ');
   }
 
   #cleanup() {
