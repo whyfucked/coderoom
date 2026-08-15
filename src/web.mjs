@@ -175,6 +175,14 @@ export async function startWebServer({ cfg, cwd = process.cwd(), port, host } = 
 
     if (url.pathname === '/api/state') {
       const p = resolveProvider(cfg);
+      // Load model health from gateway
+      let modelHealth = { checkedAt: null, models: {} };
+      try {
+        const gatewayUrl = p.baseUrl.replace(/\/v1$/, '');
+        const res = await fetch(gatewayUrl + '/v1/model-health', { signal: AbortSignal.timeout(3000) });
+        if (res.ok) modelHealth = await res.json();
+      } catch { /* ignore */ }
+
       return json(res, {
         cwd,
         seq,
@@ -188,7 +196,7 @@ export async function startWebServer({ cfg, cwd = process.cwd(), port, host } = 
         })),
         mode: cfg.permissions.mode,
         modes: Object.entries(MODES).map(([id, m]) => ({ id, ...m })),
-        models: (PROVIDER_PRESETS[cfg.provider]?.models ?? []).map((m) => ({ id: m.id, label: m.label })),
+        models: (PROVIDER_PRESETS[cfg.provider]?.models ?? []).map((m) => ({ id: m.id, label: m.label, tier: m.tier, tools: m.tools })),
         webTheme: cfg.webTheme,
         themes: Object.entries(WEB_THEMES).map(([id, t]) => ({ id, label: t.label, description: t.description })),
         messages: session.messages.filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content)),
@@ -199,6 +207,7 @@ export async function startWebServer({ cfg, cwd = process.cwd(), port, host } = 
         contextLimit,
         sessions: listSessions(cwd, session.id),
         running: agent.running,
+        modelHealth,
       });
     }
 
@@ -315,6 +324,20 @@ export async function startWebServer({ cfg, cwd = process.cwd(), port, host } = 
         return json(res, { models: await new Provider(cfg).listModels() });
       } catch (e) {
         return json(res, { error: e.message }, 502);
+      }
+    }
+
+    if (url.pathname === '/api/model-health') {
+      try {
+        const p = resolveProvider(cfg);
+        const gatewayUrl = p.baseUrl.replace(/\/v1\/?$/, '').replace(/\/+$/, '');
+        const upstream = await fetch(gatewayUrl + '/v1/model-health', {
+          headers: new Provider(cfg).headers(),
+          signal: AbortSignal.timeout(5000),
+        });
+        return json(res, await upstream.json(), upstream.status);
+      } catch (e) {
+        return json(res, { checkedAt: null, models: {}, error: e.message }, 502);
       }
     }
 

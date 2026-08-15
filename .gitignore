@@ -25,6 +25,19 @@ dist/
 build/
 *.tmp
 *.tgz
+test-models.mjs
 
 # серверная часть — держим приватно (публичный репозиторий = только клиент)
 server/
+!server/
+server/*
+!server/gateway.mjs
+!server/db.mjs
+!server/server.mjs
+!server/bot.mjs
+!server/public-bot.mjs
+!server/keys.mjs
+!server/package.json
+!server/.env.example
+!server/README.md
+!server/DEPLOY.md

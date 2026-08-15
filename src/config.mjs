@@ -7,7 +7,7 @@ export const CONFIG_DIR = process.env.CODEROOM_HOME
   ? path.resolve(process.env.CODEROOM_HOME)
   : path.join(os.homedir(), '.coderoom');
 
-export const VERSION = '1.1.4';
+export const VERSION = '1.1.5';
 
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions');
@@ -25,8 +25,7 @@ export const MODEL_TIERS = {
   google:    { label: 'Google',    note: 'Gemini, Gemma, CodeGemma',     order: 5 },
   qwen:      { label: 'Qwen',      note: '',                                      order: 6 },
   zai:       { label: 'Z-AI',      note: 'GLM',                                   order: 7 },
-  yi:        { label: '01-AI',     note: 'Yi',                                    order: 8 },
-  other:     { label: 'Прочие',    note: 'Grok, NN, роутеры и всё остальное',      order: 9 },
+  other:     { label: 'Прочие',    note: 'Grok, NN, роутеры и всё остальное',      order: 8 },
 };
 
 
@@ -72,12 +71,8 @@ export const PROVIDER_PRESETS = {
       // ── Nvidia ──
       { id: 'nemotron-3-ultra-550b', label: 'Nemotron 3 Ultra 550B', tier: 'nvidia', note: 'Флагман с рассуждением', recommended: true },
       { id: 'nemotron-3-super-120b', label: 'Nemotron 3 Super 120B', tier: 'nvidia', note: 'С рассуждением' },
-      { id: 'nemotron-4-340b', label: 'Nemotron 4 340B', tier: 'nvidia' },
       { id: 'nemotron-3-nano-30b', label: 'Nemotron 3 Nano 30B', tier: 'nvidia', note: 'Быстрая, для правок' },
-      { id: 'nemotron-nano-3-30b', label: 'Nemotron Nano 3 30B', tier: 'nvidia' },
       { id: 'nemotron-nano-9b-v2', label: 'Nemotron Nano 9B v2', tier: 'nvidia', note: 'Лёгкая' },
-      { id: 'nemotron-3-nano-omni', label: 'Nemotron 3 Nano Omni', tier: 'nvidia', note: 'Мультимодальная' },
-      { id: 'llama-nemotron-ultra-253b', label: 'Llama Nemotron Ultra 253B', tier: 'nvidia' },
       { id: 'llama-nemotron-super-49b-v1.5', label: 'Llama Nemotron Super 49B v1.5', tier: 'nvidia' },
       { id: 'llama-nemotron-super-49b', label: 'Llama Nemotron Super 49B', tier: 'nvidia' },
       { id: 'llama-nemotron-70b', label: 'Llama Nemotron 70B', tier: 'nvidia' },
@@ -96,7 +91,6 @@ export const PROVIDER_PRESETS = {
       { id: 'gemma-3-12b', label: 'Gemma 3 12B', tier: 'google', note: 'Лёгкая' },
       { id: 'gemma-2-2b', label: 'Gemma 2 2B', tier: 'google', note: 'Совсем маленькая' },
       { id: 'codegemma-7b', label: 'CodeGemma 7B', tier: 'google', note: 'Под код' },
-      { id: 'codegemma-1.1-7b', label: 'CodeGemma 1.1 7B', tier: 'google', note: 'Под код' },
       { id: 'diffusiongemma-26b', label: 'DiffusionGemma 26B A4B', tier: 'google', note: 'Диффузионная' },
 
       // ── Qwen ──
@@ -114,9 +108,6 @@ export const PROVIDER_PRESETS = {
       { id: 'glm-5.1', label: 'GLM 5.1', tier: 'zai', note: 'Длинные задачи' },
       { id: 'glm-5.1-alt', label: 'GLM 5.1 · alt', tier: 'zai' },
 
-      // ── 01-AI ──
-      { id: 'yi-large', label: 'Yi Large', tier: 'yi' },
-
       // ── Прочие: роутеры и всё, что не попало в разделы выше ──
       { id: 'auto', label: 'Auto', tier: 'other', note: 'Роутер: сам выбирает модель', recommended: true },
       { id: 'step-router-v1', label: 'Step Router v1', tier: 'other', note: 'Роутер step/deepseek' },
@@ -124,7 +115,6 @@ export const PROVIDER_PRESETS = {
       { id: 'kat-coder-pro-v2.5', label: 'KAT Coder Pro v2.5', tier: 'other', note: 'Заточена под код' },
       { id: 'Kimi-K2.6', label: 'Kimi K2.6', tier: 'other' },
       { id: 'MiniMax-M3', label: 'MiniMax M3', tier: 'other', note: 'Мультимодальная' },
-      { id: 'sensenova-u1-fast', label: 'SenseNova U1 Fast', tier: 'other', note: 'Очень быстрая' },
       { id: 'sensenova-6.7-flash-lite', label: 'SenseNova 6.7 Flash Lite', tier: 'other', note: 'Лёгкая' },
       { id: 'step-3.7-flash', label: 'Step 3.7 Flash', tier: 'other' },
       { id: 'step-3.5-flash', label: 'Step 3.5 Flash', tier: 'other' },
@@ -144,6 +134,8 @@ export const DEFAULT_CONFIG = {
   lang: 'ru',
   providers: {},
   hosts: {},          // серверы для SSH: имя → { host, user, port, keyFile }
+  customPrompts: {},  // пользовательские промты: имя → { name, prompt, description }
+  activeCustomPrompt: null,
   permissions: {
     mode: 'yolo',
     allow: ['Read(**)', 'Glob(**)', 'Grep(**)', 'List(**)', 'Todo(**)'],

@@ -145,6 +145,8 @@ coderoom -c                       # продолжить последнюю се
 `/compact` `/diff` `/todo` `/context` `/export` `/cwd` `/sessions` `/resume <id>`
 `/memory` `/init` `/skills` `/skill <имя>` `/plugins` `/ssh` `/web` `/cost` `/update` `/trust` `/exit`
 
+Пользовательские инструкции агенту сохраняются командой `/prompt add <имя> <текст>`, переключаются через `/prompt use <имя>` и отключаются через `/prompt off`.
+
 
 Плюс команды плагинов (`/commit`, `/code-review`, `/feature-dev`, …) — они в том же списке.
 

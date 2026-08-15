@@ -9,14 +9,21 @@
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.env.NO_COLOR = '1';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'coderoom-test-'));
 process.env.CODEROOM_HOME = path.join(tmp, 'home');
 process.env.CODEROOM_GATEWAY_DATA = path.join(tmp, 'gwdata'); // изолируем данные шлюза от server/data
 delete process.env.SEEKAI_API_KEY;
+delete process.env.SEEKAI_API_KEYS;
 delete process.env.BLUESMINDS_API_KEY;
+delete process.env.BLUESMINDS_API_KEYS;
 delete process.env.HCNSEC_API_KEY;
+delete process.env.HCNSEC_API_KEYS;
+delete process.env.NVIDIA_API_KEY;
+delete process.env.NVIDIA_API_KEYS;
 
 
 let fails = 0;
@@ -120,7 +127,7 @@ await check('каждая модель клиента лежит в своём �
   if (noTier.length) throw new Error('без раздела: ' + noTier.map((m) => m.id).slice(0, 5).join(', '));
 
   // разделы, обещанные в /model — должны быть непустыми
-  for (const tier of ['anthropic', 'openai', 'nvidia', 'deepseek', 'google', 'qwen', 'zai', 'yi']) {
+  for (const tier of ['anthropic', 'openai', 'nvidia', 'deepseek', 'google', 'qwen', 'zai']) {
     if (!MODEL_TIERS[tier]) throw new Error('нет раздела ' + tier);
     if (!models.some((m) => m.tier === tier)) throw new Error('раздел пуст: ' + tier);
   }
@@ -130,6 +137,13 @@ await check('каждая модель клиента лежит в своём �
 
   const byTier = Object.keys(MODEL_TIERS).map((t) => `${t}:${models.filter((m) => m.tier === t).length}`);
   return byTier.join(' ');
+});
+
+await check('/model: сначала производитель, затем его модели', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src', 'repl.mjs'), 'utf8');
+  if (!source.includes("subtitle: 'Сначала выбери производителя'")) throw new Error('нет меню производителей');
+  if (!source.includes('title: chosenGroup.label')) throw new Error('нет меню моделей выбранного производителя');
+  return 'производитель → модель';
 });
 
 await check('апстримы шлюза: seekai + bluesminds + nvidia (только Nemotron) + hcnsec', () => {
@@ -147,8 +161,8 @@ await check('апстримы шлюза: seekai + bluesminds + nvidia (толь
 
   if (U.bluesminds.keyEnv !== 'BLUESMINDS_API_KEY') throw new Error('bluesminds keyEnv: ' + U.bluesminds.keyEnv);
   if (!U.bluesminds.baseUrl.includes('api.bluesminds.com')) throw new Error('bluesminds baseUrl: ' + U.bluesminds.baseUrl);
-  if (U.bluesminds.models.length !== 17) throw new Error('bluesminds моделей: ' + U.bluesminds.models.length + ' (ждём 17)');
-  for (const need of ['01-ai/yi-large', 'z-ai/glm-5.2', 'qwen/qwen3-coder-480b-a35b-instruct', 'openai/gpt-oss-120b']) {
+  if (U.bluesminds.models.length !== 15) throw new Error('bluesminds моделей: ' + U.bluesminds.models.length + ' (ждём 15)');
+  for (const need of ['z-ai/glm-5.2', 'qwen/qwen3-coder-480b-a35b-instruct', 'openai/gpt-oss-120b']) {
     if (!U.bluesminds.models.includes(need)) throw new Error('нет модели ' + need);
   }
 
@@ -184,6 +198,27 @@ await check('nvidia: enable_thinking по умолчанию, env выключа
   }
 });
 
+await check('шлюз загружает пул API-ключей и старый одиночный формат', () => {
+  const oldMany = process.env.SEEKAI_API_KEYS;
+  const oldOne = process.env.HCNSEC_API_KEY;
+  try {
+    process.env.SEEKAI_API_KEYS = 'sk-one, sk-two\nsk-three;sk-two';
+    process.env.HCNSEC_API_KEY = 'sk-legacy';
+    const loaded = GW.loadUpstreams();
+    if (loaded.seekai.apiKeys.join(',') !== 'sk-one,sk-two,sk-three') {
+      throw new Error('пул разобран неверно: ' + loaded.seekai.apiKeys.join(','));
+    }
+    if (loaded.seekai.apiKey !== 'sk-one') throw new Error('нет совместимого apiKey');
+    if (loaded.hcnsec.apiKeys.join(',') !== 'sk-legacy') throw new Error('старый API_KEY не загрузился');
+    return `${loaded.seekai.apiKeys.length} ключа SeekAI + legacy`;
+  } finally {
+    if (oldMany === undefined) delete process.env.SEEKAI_API_KEYS;
+    else process.env.SEEKAI_API_KEYS = oldMany;
+    if (oldOne === undefined) delete process.env.HCNSEC_API_KEY;
+    else process.env.HCNSEC_API_KEY = oldOne;
+  }
+});
+
 await check('модели шлюза и клиента синхронны (через алиасы, без дублей)', () => {
   const U = GW.GATEWAY_UPSTREAMS;
   const aliases = GW.MODEL_ALIASES;
@@ -204,6 +239,19 @@ await check('модели шлюза и клиента синхронны (че�
   if (broken.length) throw new Error('алиасы в никуда: ' + broken.join(', '));
 
   return `${gwIds.length} моделей, ${Object.keys(aliases).length} алиасов`;
+});
+
+await check('удалены неработающие модели', () => {
+  const removed = ['nemotron-4-340b', 'yi-large', 'codegemma-1.1-7b', 'nemotron-3-nano-omni', 'nemotron-nano-3-30b', 'llama-nemotron-ultra-253b', 'sensenova-u1-fast'];
+  const client = new Set(PROVIDER_PRESETS.coderoom.models.map((m) => m.id));
+  const present = removed.filter((id) => client.has(id));
+  if (present.length) throw new Error('остались в /model: ' + present.join(', '));
+
+  const gwIds = new Set(Object.values(GW.GATEWAY_UPSTREAMS).flatMap((u) => u.models));
+  const aliasHits = removed.filter((id) => GW.MODEL_ALIASES[id] && gwIds.has(GW.MODEL_ALIASES[id]));
+  if (aliasHits.length) throw new Error('остались в алиасах/апстримах: ' + aliasHits.join(', '));
+
+  return 'все сломанные модели удалены';
 });
 
 await check('в клиенте нет внутренних путей вендоров', () => {

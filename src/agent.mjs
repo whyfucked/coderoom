@@ -45,7 +45,7 @@ function environmentBlock(cwd) {
   return lines.join('\n');
 }
 
-export function buildSystemPrompt({ cwd, mode }) {
+export function buildSystemPrompt({ cwd, mode, customPrompt = '' }) {
   const memory = loadMemory(cwd);
   let skillsList = '';
   try { skillsList = skillsSummary({ cwd }); } catch { /* плагины опциональны */ }
@@ -96,7 +96,7 @@ Bash — для сборки, тестов, git. Не читай и не пиш�
 
 Для задач в 3+ шага заведи план через Todo и держи его актуальным: ровно одна задача in_progress.
 
-${skillsBlock}## Проверка
+${skillsBlock}${customPrompt ? `## Пользовательский промт\n\n${customPrompt}\n\n` : ''}## Проверка
 
 Если в проекте есть тесты или линтер — запусти их после изменений. Не объявляй задачу выполненной, если проверки падают. Команды проверки не выдумывай — найди их в package.json, Makefile или README.
 
@@ -153,7 +153,10 @@ export class Agent {
         this.ui.onStep?.(step, maxSteps);
         await this.#maybeCompact();
 
-        const system = buildSystemPrompt({ cwd: this.cwd, mode: this.permissions.mode });
+        const customPrompt = this.cfg.activeCustomPrompt
+          ? this.cfg.customPrompts?.[this.cfg.activeCustomPrompt]?.prompt ?? ''
+          : '';
+        const system = buildSystemPrompt({ cwd: this.cwd, mode: this.permissions.mode, customPrompt });
         let done = null;
 
         const stream = this.provider.stream({

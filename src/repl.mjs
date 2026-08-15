@@ -16,7 +16,7 @@ import { Provider, estimateTokens } from './provider.mjs';
 import { MODES, ruleFor } from './permissions.mjs';
 import {
   saveConfig, resolveProvider, maskKey, CONFIG_FILE, CONFIG_DIR,
-  PROVIDER_PRESETS, GLOBAL_MEMORY, DEFAULT_CONFIG,
+  PROVIDER_PRESETS, MODEL_TIERS, GLOBAL_MEMORY, DEFAULT_CONFIG,
 } from './config.mjs';
 import { changeKey, VERSION } from './onboarding.mjs';
 import { loadPlugins, expandCommand } from './plugins.mjs';
@@ -210,6 +210,7 @@ export class Repl {
       provider:{ desc: 'сменить провайдера',           run: (a) => this.#cmdProvider(a) },
       gateway: { desc: 'адрес шлюза: /gateway <url>',  run: (a) => this.#cmdGateway(a) },
       model:   { desc: 'сменить модель',               run: (a) => this.#cmdModel(a) },
+      prompt:  { desc: 'свои промты: /prompt add|use|off|list', run: (a) => this.#cmdPrompt(a) },
       theme:   { desc: 'сменить дизайн терминала',     run: (a) => this.#cmdTheme(a) },
       mode:    { desc: 'режим доступа агента',         run: (a) => this.#cmdMode(a) },
       key:     { desc: 'сменить API-ключ',             run: async () => { await changeKey(this.cfg); this.agent.provider = new Provider(this.cfg); } },
@@ -237,6 +238,38 @@ export class Repl {
       exit:    { desc: 'выход',                        run: () => { this.exiting = true; } },
       quit:    { desc: 'выход',                        run: () => { this.exiting = true; } },
     };
+  }
+
+  #cmdPrompt(arg = '') {
+    const t = this.t;
+    const [action = 'list', name, ...rest] = String(arg).trim().split(/\s+/);
+    this.cfg.customPrompts ??= {};
+    if (action === 'add') {
+      const prompt = rest.join(' ').trim();
+      if (!name || !prompt) return void stdout.write(`  ${t.muted('Использование: /prompt add <имя> <текст>')}\n\n`);
+      this.cfg.customPrompts[name] = { name, prompt };
+      this.cfg.activeCustomPrompt = name;
+      saveConfig(this.cfg);
+      return void stdout.write(`  ${t.success('✓')} промт ${t.bold(name)} сохранён и включён\n\n`);
+    }
+    if (action === 'use') {
+      if (!this.cfg.customPrompts[name]) return void stdout.write(`  ${t.error('Нет такого промта.')} ${t.muted('/prompt list')}\n\n`);
+      this.cfg.activeCustomPrompt = name;
+      saveConfig(this.cfg);
+      return void stdout.write(`  ${t.success('✓')} активный промт: ${t.bold(name)}\n\n`);
+    }
+    if (action === 'off') {
+      this.cfg.activeCustomPrompt = null;
+      saveConfig(this.cfg);
+      return void stdout.write(`  ${t.success('✓')} пользовательский промт выключен\n\n`);
+    }
+    const names = Object.keys(this.cfg.customPrompts);
+    stdout.write(`\n  ${t.bold('Пользовательские промты')}\n`);
+    if (!names.length) stdout.write(`  ${t.muted('Пока нет. Создать: /prompt add имя текст')}\n\n`);
+    else {
+      for (const id of names) stdout.write(`  ${id === this.cfg.activeCustomPrompt ? t.success('●') : t.muted('○')} ${t.primary(id)}\n`);
+      stdout.write('\n');
+    }
   }
 
   #cmdHelp() {
@@ -412,7 +445,34 @@ export class Repl {
     stdout.write('\x1b[2K');
     this.modelChoices = models;
 
-    const opts = models.map((m) => {
+    const available = new Map(models.map((m) => [m.id, m]));
+    const groups = Object.entries(MODEL_TIERS)
+      .sort(([, a], [, b]) => a.order - b.order)
+      .map(([id, meta]) => ({
+        id,
+        ...meta,
+        models: (preset.models ?? []).filter((m) => m.tier === id && available.has(m.id)),
+      }))
+      .filter((g) => g.models.length);
+
+    const activeTier = preset.models?.find((m) => m.id === this.cfg.model)?.tier;
+    const groupPick = await select({
+      theme: t,
+      title: 'Модели',
+      subtitle: 'Сначала выбери производителя',
+      options: groups.map((g) => ({
+        label: g.label,
+        hint: `${g.models.length} моделей${g.id === activeTier ? ' · ● текущая' : ''}`,
+        detail: g.note || `Моделей: ${g.models.length}`,
+      })),
+      initial: Math.max(0, groups.findIndex((g) => g.id === activeTier)),
+      detail: true,
+    });
+    if (groupPick < 0) return;
+
+    const chosenGroup = groups[groupPick];
+    const chosenModels = chosenGroup.models.map((known) => available.get(known.id));
+    const opts = chosenModels.map((m) => {
       const known = preset.models?.find((k) => k.id === m.id);
       const nonChat = known?.chat === false;
       return {
@@ -420,20 +480,19 @@ export class Repl {
         hint: (m.id === this.cfg.model ? '● сейчас · ' : '') + (nonChat ? '⊘ не для чата' : (known?.note ?? m.id)),
         detail: [known?.note, `id: ${m.id}`, nonChat ? 'Картинки/аудио — для обычного чата не подходит' : null]
           .filter(Boolean).join('\n'),
-        group: nonChat ? 'не для чата' : 'чат',
       };
     });
-    const cur = models.findIndex((m) => m.id === this.cfg.model);
+    const cur = chosenModels.findIndex((m) => m.id === this.cfg.model);
     const pick = await select({
       theme: t,
-      title: 'Модель',
-      subtitle: `${preset.label} · ${models.length} доступно`,
+      title: chosenGroup.label,
+      subtitle: `Выбери модель · ${chosenModels.length} доступно`,
       options: opts,
       initial: cur < 0 ? 0 : cur,
-      filterable: models.length > 8,
+      filterable: chosenModels.length > 8,
       detail: true,
     });
-    if (pick >= 0 && models[pick]) apply(models[pick].id);
+    if (pick >= 0 && chosenModels[pick]) apply(chosenModels[pick].id);
   }
 
   async #cmdTheme(arg) {
@@ -1415,7 +1474,8 @@ export class Repl {
       this.#flushStream();
       this.spinner.stop();
 
-      stdout.write(`\n  ${t.error(t.symbols.cross + ' ' + e.message)}\n`);
+      const stopped = /^(terminated|abort(ed)?|отменено пользователем|запрос прерван)$/i.test(String(e.message).trim());
+      stdout.write(stopped ? `\n  ${t.warn('⏹ запрос остановлен')}\n` : `\n  ${t.error(t.symbols.cross + ' ' + e.message)}\n`);
       if (e.hint) stdout.write(`  ${t.muted(e.hint)}\n`);
       if (e.status === 401) stdout.write(`  ${t.muted('Сменить ключ: /key')}\n`);
       stdout.write('\n');

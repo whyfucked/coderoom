@@ -506,6 +506,15 @@ function renderChips() {
   const m = BOOT.modes.find((x) => x.id === S.mode);
   $('#chipMode').querySelector('b').textContent = m ? m.label : S.mode;
   $('#chipMode').classList.toggle('warn', S.mode === 'yolo');
+
+  // Update health chip
+  if (S.modelHealth && S.modelHealth.models) {
+    const models = S.modelHealth.models;
+    const working = Object.values(models).filter(m => m.ok).length;
+    const total = Object.keys(models).length;
+    $('#chipHealth').querySelector('b').textContent = working + '/' + total;
+    $('#chipHealth').classList.toggle('warn', working < total);
+  }
 }
 
 function renderSessions() {
@@ -558,6 +567,7 @@ async function hydrate() {
   S.provider = s.provider && s.provider.id;
   S.providers = s.providers || [];
   S.models = s.models && s.models.length ? s.models : S.models;
+  S.modelHealth = s.modelHealth || { checkedAt: null, models: {} };
   S.usage = s.usage || S.usage;
   S.contextTokens = s.contextTokens || 0;
   S.sessionId = s.sessionId;
@@ -725,6 +735,7 @@ const COMMANDS = [
   { key: '/theme', desc: 'оформление', run: () => palette('theme') },
   { key: '/sessions', desc: 'прошлые диалоги', run: () => palette('session') },
   { key: '/settings', desc: 'настройки и ключ', run: openSettings },
+  { key: '/health', desc: 'здоровье моделей', run: showModelHealth },
   { key: '/stop', desc: 'прервать агента', run: () => api('/api/interrupt', {}) },
 ];
 
@@ -742,6 +753,48 @@ async function clearHistory() {
   showHello();
   renderTodos([]);
   toast('История очищена');
+}
+
+async function showModelHealth() {
+  try {
+    const res = await fetch('/api/model-health?token=' + encodeURIComponent(BOOT.token));
+    const data = await res.json();
+    if (!data.models) return toast('Нет данных о здоровье моделей', 'error');
+
+    const models = data.models;
+    const working = Object.values(models).filter(m => m.ok).length;
+    const total = Object.keys(models).length;
+    const checkedAt = data.checkedAt ? new Date(data.checkedAt).toLocaleString('ru-RU') : 'неизвестно';
+
+    const rows = [];
+    const byUpstream = {};
+    for (const [modelId, info] of Object.entries(models)) {
+      const up = info.upstream || 'unknown';
+      if (!byUpstream[up]) byUpstream[up] = [];
+      byUpstream[up].push({ modelId, ...info });
+    }
+
+    for (const [up, list] of Object.entries(byUpstream)) {
+      rows.push(el('div', { class: 'grp' }, up));
+      for (const m of list) {
+        rows.push(el('div', { class: 'row' + (m.ok ? ' ok' : ' err') },
+          el('div', { class: 'mid' },
+            el('div', { class: 't', text: m.modelId }),
+            el('div', { class: 'h', text: m.ok ? 'работает' : 'ошибка: ' + (m.error || m.status) })
+          ),
+          el('span', { class: m.ok ? 'ok' : 'bad', text: m.ok ? '���' : '���' })
+        ));
+      }
+    }
+
+    sheet('Здоровье моделей', '🩺', [
+      el('div', { class: 'kv' }, el('b', { text: 'Проверено' }), el('span', { text: checkedAt })),
+      el('div', { class: 'kv' }, el('b', { text: 'Рабочих / Всего' }), el('span', { text: working + ' / ' + total })),
+      ...rows
+    ], [el('button', { class: 'btn pri', type: 'button', text: 'Закрыть', onclick: closeOverlay })]);
+  } catch (e) {
+    toast('Ошибка: ' + e.message, 'error');
+  }
 }
 
 /* ─────────────────────────  подсказки в поле ввода  ───────────────────────── */
@@ -858,6 +911,9 @@ function paletteActions(filter) {
     for (const m of S.models) {
       add('Модель', m.label || m.id, m.id, () => setSetting({ model: m.id }), m.id === S.model);
     }
+  }
+  if (!filter || filter === 'health') {
+    add('Здоровье моделей', 'Показать статус', 'проверка работоспособности', showModelHealth);
   }
   if (!filter || filter === 'mode') {
     for (const m of BOOT.modes) add('Права', m.label, m.hint, () => setSetting({ mode: m.id }), m.id === S.mode);
@@ -1025,6 +1081,7 @@ $('#btnSettings').addEventListener('click', openSettings);
 $('#btnPalette').addEventListener('click', () => palette());
 $('#chipModel').addEventListener('click', () => palette('model'));
 $('#chipMode').addEventListener('click', () => palette('mode'));
+$('#chipHealth').addEventListener('click', showModelHealth);
 $('#chipTheme').addEventListener('click', () => palette('theme'));
 $('#btnRailOpen').addEventListener('click', () => document.body.classList.toggle('rail-open'));
 $('#btnRailClose').addEventListener('click', closeRail);

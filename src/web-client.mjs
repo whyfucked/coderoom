@@ -115,6 +115,7 @@ ${asset('client.css')}
       <span class="spacer"></span>
       <button class="chip" id="chipModel" type="button" title="Сменить модель"><span class="lbl">модель</span><b></b></button>
       <button class="chip" id="chipMode" type="button" title="Права агента"><span class="lbl">права</span><b></b></button>
+      <button class="chip" id="chipHealth" type="button" title="Здоровье моделей" aria-label="Здоровье моделей"><span class="lbl">здоровье</span><b></b></button>
       <button class="chip sq" id="chipTheme" type="button" title="Оформление" aria-label="Оформление">◑</button>
     </header>
 

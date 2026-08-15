@@ -194,7 +194,8 @@ async function main() {
 
   // Обновления: в диалоге спросит сам Repl, здесь — только тихое уведомление
   if (opts.noUpdateCheck) cfg.update = { ...(cfg.update ?? {}), check: false };
-  if (opts.web || opts.print) {
+  // Проверка обновлений на каждом запуске (кроме --no-update)
+  if (!opts.noUpdateCheck) {
     const t = createTheme(cfg.theme);
     maybeNotifyUpdate(cfg, t, { write: (s) => process.stderr.write(s + '\n') })
       .catch(() => { /* обновления не должны мешать работе */ });

@@ -1,0 +1,21 @@
+{
+  "name": "coderoom-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodeRoom Gateway — самодостаточный API-шлюз: выдаёт ключи cr-… и проксирует к апстримам (agentrouter/hcnsec). Ставится на домен отдельно от клиента.",
+  "type": "module",
+  "bin": {
+    "coderoom-gateway": "server.mjs"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "keys": "node keys.mjs",
+    "bot": "node bot.mjs",
+    "bot:public": "node public-bot.mjs",
+    "chats": "node keys.mjs chats"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {}
+}
