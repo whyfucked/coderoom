@@ -77,7 +77,8 @@ npm install -g github:whyfucked/coderoom
 
 ## Быстрый старт
 
-Нужен ключ вида `cr-…` — его выдаёт владелец шлюза.
+Нужен ключ вида `cr-…`. Бесплатный ключ можно получить в Telegram-боте
+[@coderoomfree_bot](https://t.me/coderoomfree_bot).
 
 ### Вариант 1. Интерактивный мастер
 
