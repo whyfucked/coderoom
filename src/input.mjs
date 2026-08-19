@@ -291,11 +291,15 @@ export function createInput({
         if (queue) {
           const nl = queue.indexOf('\n');
           if (nl !== -1) {
-            const line = queue.slice(0, nl);
-            queue = queue.slice(nl + 1);
+            // Terminal paste commonly arrives as one chunk containing newlines.
+            // Treat the complete queued chunk as one prompt instead of dropping
+            // everything after the first line. A trailing newline is the submit
+            // key that ended the paste and should not become part of the prompt.
+            const line = queue.replace(/\n+$/, '');
+            queue = '';
             active = false;
             resolveFn = null;
-            stdout.write(glyphs(t.primary(PROMPT) + line) + '\n');
+            stdout.write(glyphs(t.primary(PROMPT) + line.split('\n').join('\n' + ' '.repeat(PROMPT_W))) + '\n');
             if (line.trim()) {
               history = history.filter((h) => h !== line);
               history.push(line);

@@ -10,7 +10,7 @@ Nvidia, DeepSeek, Google, Qwen, Z-AI, 01-AI). Ключи провайдеров 
 свой ключ `cr-…`.
 
 ```
-  ▗▄▄▖ CodeRoom v1.1.7
+  ▗▄▄▖ CodeRoom v1.1.8
   локальный агент для кода
 
   ⏺ Read(src/app.js)

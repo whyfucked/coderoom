@@ -210,6 +210,7 @@ export class Repl {
       provider:{ desc: 'сменить провайдера',           run: (a) => this.#cmdProvider(a) },
       gateway: { desc: 'адрес шлюза: /gateway <url>',  run: (a) => this.#cmdGateway(a) },
       model:   { desc: 'сменить модель',               run: (a) => this.#cmdModel(a) },
+      'check-model': { desc: 'проверить доступность моделей', run: () => this.#cmdCheckModel() },
       prompt:  { desc: 'свои промты: /prompt add|use|off|list', run: (a) => this.#cmdPrompt(a) },
       theme:   { desc: 'сменить дизайн терминала',     run: (a) => this.#cmdTheme(a) },
       mode:    { desc: 'режим доступа агента',         run: (a) => this.#cmdMode(a) },
@@ -268,6 +269,36 @@ export class Repl {
     if (!names.length) stdout.write(`  ${t.muted('Пока нет. Создать: /prompt add имя текст')}\n\n`);
     else {
       for (const id of names) stdout.write(`  ${id === this.cfg.activeCustomPrompt ? t.success('●') : t.muted('○')} ${t.primary(id)}\n`);
+      stdout.write('\n');
+    }
+  }
+
+  async #cmdCheckModel() {
+    const t = this.t;
+    const spinner = this.spinner;
+    spinner.start('проверяю модели…');
+    try {
+      const health = await new Provider(this.cfg).modelHealth();
+      spinner.stop();
+      const rows = Object.entries(health.models ?? {});
+      const active = rows.filter(([, v]) => v?.ok);
+      const inactive = rows.filter(([, v]) => !v?.ok);
+      const ordered = [...active, ...inactive];
+      const ok = active.length;
+      stdout.write(`\n  ${t.bold('Проверка моделей')} ${t.muted(`· ${ok}/${rows.length} онлайн`)}\n`);
+      if (active.length) stdout.write(`  ${t.success('Активные модели')}\n`);
+      for (const [index, [id, info]] of ordered.entries()) {
+        if (index === active.length && inactive.length) stdout.write(`  ${t.muted('Недоступные модели')}\n`);
+        const icon = info?.ok ? t.success('✓') : t.error('✗');
+        const detail = info?.latencyMs ? t.muted(` ${info.latencyMs}ms`) : '';
+        stdout.write(`  ${icon} ${t.primary(id)}${detail}${info?.error ? t.muted(` — ${String(info.error).slice(0, 80)}`) : ''}\n`);
+      }
+      if (!rows.length) stdout.write(`  ${t.muted('Шлюз не вернул данные. Запусти проверку на сервере.') }\n`);
+      stdout.write('\n');
+    } catch (e) {
+      spinner.stop();
+      stdout.write(`  ${t.error('✗ Не удалось проверить модели:')} ${e.message}\n`);
+      if (e.hint) stdout.write(`  ${t.muted(e.hint)}\n`);
       stdout.write('\n');
     }
   }
@@ -1440,18 +1471,22 @@ export class Repl {
 
   async #runPluginCommand(cmd, argsStr) {
     const t = this.t;
-    stdout.write(`  ${t.muted(`▸ ${cmd.plugin} · /${cmd.name}${argsStr ? ' ' + argsStr : ''}`)}\n`);
+    stdout.write(`\n  ${t.primary('◆')} ${t.bold(cmd.plugin)} ${t.muted('·')} ${t.accent('/' + cmd.name)}${argsStr ? ' ' + t.muted(argsStr) : ''}\n`);
+    this.spinner.start('запускаю плагин…');
     let prompt;
     try {
       prompt = expandCommand(cmd, argsStr, { cwd: this.cwd });
     } catch (e) {
+      this.spinner.stop();
       stdout.write(`  ${t.error('Не смог подготовить команду:')} ${e.message}\n\n`);
       return;
     }
     if (!prompt.trim()) {
+      this.spinner.stop();
       stdout.write(`  ${t.muted('Пустая команда.')}\n\n`);
       return;
     }
+    this.spinner.stop();
     await this.#handleMessage(prompt);
   }
 

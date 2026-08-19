@@ -7,7 +7,7 @@ export const CONFIG_DIR = process.env.CODEROOM_HOME
   ? path.resolve(process.env.CODEROOM_HOME)
   : path.join(os.homedir(), '.coderoom');
 
-export const VERSION = '1.1.7';
+export const VERSION = '1.1.8';
 
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions');

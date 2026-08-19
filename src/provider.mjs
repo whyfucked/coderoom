@@ -108,6 +108,12 @@ export class Provider {
     }
   }
 
+  async modelHealth({ timeoutMs = 10000 } = {}) {
+    const res = await this.#fetch('/v1/model-health', { method: 'GET' }, { timeoutMs });
+    const json = await res.json().catch(() => ({}));
+    return { checkedAt: json.checkedAt ?? null, models: json.models ?? {} };
+  }
+
   async #fetch(pathname, init, { timeoutMs = 300000, signal } = {}) {
     if (!this.settings.apiKey && !this.settings.keyOptional) {
       throw new ProviderError(`Не задан API-ключ для провайдера ${this.settings.label}`, {
