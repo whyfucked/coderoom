@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_DIR } from './config.mjs';
 import { checkDangerous } from './permissions.mjs';
 
-const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MODULE_DIR = typeof __dirname === 'string'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+const PKG_ROOT = path.resolve(MODULE_DIR, '..');
 export const BUNDLED_PLUGINS_DIR = path.join(PKG_ROOT, 'plugins');
 
 export function parseFrontmatter(text) {

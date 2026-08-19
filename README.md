@@ -9,10 +9,8 @@ DeepSeek V4, Gemini и Gemma, Qwen, GLM, Yi и др. — разложены по
 Nvidia, DeepSeek, Google, Qwen, Z-AI, 01-AI). Ключи провайдеров держит шлюз — тебе нужен только
 свой ключ `cr-…`.
 
-**Новое:** добавлены SeekAI модели `claude-opus-5`, `gpt-5.6-sol` и `claude-opus-4-8`.
-
 ```
-  ▗▄▄▖ CodeRoom v1.1.4
+  ▗▄▄▖ CodeRoom v1.1.6
   локальный агент для кода
 
   ⏺ Read(src/app.js)

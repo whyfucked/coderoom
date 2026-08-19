@@ -7,7 +7,7 @@ export const CONFIG_DIR = process.env.CODEROOM_HOME
   ? path.resolve(process.env.CODEROOM_HOME)
   : path.join(os.homedir(), '.coderoom');
 
-export const VERSION = '1.1.5';
+export const VERSION = '1.1.6';
 
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 export const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions');
@@ -49,73 +49,60 @@ export const PROVIDER_PRESETS = {
     smallModel: 'nemotron-3-nano-30b',
     site: '',
     models: [
-      // ── Anthropic ──
-      { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', tier: 'anthropic', tools: true, recommended: true, note: 'Флагман. Инструменты ✓ (~19s)' },
-      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', tier: 'anthropic', tools: true, note: 'Top Claude Opus tier for the hardest reasoning, coding, and long-horizon agents' },
-      { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'anthropic', tools: true, note: 'Agent-ready GPT for coding and computer-use workflows' },
-      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'anthropic', tools: true, note: 'Дешевле Opus, инструменты ✓ (~12–28s)' },
-      { id: 'claude-sonnet', label: 'Claude Sonnet', tier: 'anthropic', note: 'Универсальная' },
-      { id: 'claude-haiku', label: 'Claude Haiku', tier: 'anthropic', note: 'Лёгкая и быстрая' },
-      { id: 'claude-fable-5', label: 'Claude Fable 5', tier: 'anthropic', tools: false, note: 'С tools зависает >75s — не брать для агента' },
-
-      // ── ChatGPT ──
-      { id: 'gpt-5-4', label: 'GPT-5.4', tier: 'openai', tools: false, note: 'Самая быстрая (~8.8s). Без инструментов' },
-      { id: 'gpt-5-5', label: 'GPT-5.5', tier: 'openai', tools: false, note: 'Быстрая (~9.6s). Без инструментов' },
-      { id: 'gpt-5-6-luna', label: 'GPT-5.6 Luna', tier: 'openai', tools: false, note: 'Быстрая (~11–16s). Без инструментов' },
-      { id: 'gpt-5.6', label: 'GPT-5.6', tier: 'openai', tools: false, note: 'Без инструментов (~15–52s, нестабильно)' },
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', tier: 'openai', tools: false, note: 'Frontier GPT-5.6 model for complex professional work, coding, and agentic workflows' },
-      { id: 'gpt-5-6-terra', label: 'GPT-5.6 Terra', tier: 'openai', tools: false, note: 'Без инструментов (~12–47s)' },
-      { id: 'gpt-oss-120b', label: 'GPT-OSS 120B', tier: 'openai', note: 'Открытая, крупная' },
-      { id: 'gpt-oss-20b', label: 'GPT-OSS 20B', tier: 'openai', note: 'Открытая, лёгкая' },
-
-      // ── Nvidia ──
-      { id: 'nemotron-3-ultra-550b', label: 'Nemotron 3 Ultra 550B', tier: 'nvidia', note: 'Флагман с рассуждением', recommended: true },
-      { id: 'nemotron-3-super-120b', label: 'Nemotron 3 Super 120B', tier: 'nvidia', note: 'С рассуждением' },
-      { id: 'nemotron-3-nano-30b', label: 'Nemotron 3 Nano 30B', tier: 'nvidia', note: 'Быстрая, для правок' },
-      { id: 'nemotron-nano-9b-v2', label: 'Nemotron Nano 9B v2', tier: 'nvidia', note: 'Лёгкая' },
+      { id: 'claude-fable-5', label: 'Claude Fable 5', tier: 'anthropic' },
+      { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', tier: 'anthropic', tools: true, recommended: true },
+      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', tier: 'anthropic', tools: true },
+      { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'anthropic', tools: true },
+      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'anthropic', tools: true },
+      { id: 'gpt-5-5', label: 'GPT-5.5', tier: 'openai' },
+      { id: 'gpt-5.6', label: 'GPT-5.6', tier: 'openai' },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', tier: 'openai' },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', tier: 'openai' },
+      { id: 'gemini-3-1-pro', label: 'Gemini 3.1 Pro', tier: 'google' },
+      { id: 'gemini-3-flash', label: 'Gemini 3 Flash', tier: 'google' },
+      { id: 'gemini-3-pro', label: 'Gemini 3 Pro', tier: 'google' },
+      { id: 'qwen-3-max', label: 'Qwen 3 Max', tier: 'qwen' },
+      { id: 'glm-5-2', label: 'GLM 5.2', tier: 'zai' },
+      { id: 'grok-4.5', label: 'Grok 4.5', tier: 'other' },
+      { id: 'grok-4.6', label: 'Grok 4.6', tier: 'other' },
+      { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', tier: 'deepseek' },
+      { id: 'DeepSeek-V4-Flash-0731', label: 'DeepSeek V4 Flash (0731)', tier: 'deepseek' },
+      { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', tier: 'deepseek' },
+      { id: 'deepseek-v4-pro-0813', label: 'DeepSeek V4 Pro (0813)', tier: 'deepseek' },
+      { id: 'DeepSeek-V4-Flash', label: 'DeepSeek V4 Flash (classic)', tier: 'deepseek' },
+      { id: 'DeepSeek-V4-Pro', label: 'DeepSeek V4 Pro (classic)', tier: 'deepseek' },
+      { id: 'gpt-oss-120b', label: 'GPT-OSS 120B', tier: 'openai' },
+      { id: 'gpt-oss-20b', label: 'GPT-OSS 20B', tier: 'openai' },
+      { id: 'nemotron-3-ultra-550b', label: 'Nemotron 3 Ultra 550B', tier: 'nvidia', recommended: true },
+      { id: 'nemotron-3-super-120b', label: 'Nemotron 3 Super 120B', tier: 'nvidia' },
+      { id: 'nemotron-3-nano-30b', label: 'Nemotron 3 Nano 30B', tier: 'nvidia' },
+      { id: 'nemotron-nano-9b-v2', label: 'Nemotron Nano 9B v2', tier: 'nvidia' },
       { id: 'llama-nemotron-super-49b-v1.5', label: 'Llama Nemotron Super 49B v1.5', tier: 'nvidia' },
       { id: 'llama-nemotron-super-49b', label: 'Llama Nemotron Super 49B', tier: 'nvidia' },
       { id: 'llama-nemotron-70b', label: 'Llama Nemotron 70B', tier: 'nvidia' },
-
-      // ── DeepSeek ──
-      { id: 'DeepSeek-V4-Pro', label: 'DeepSeek V4 Pro', tier: 'deepseek', note: 'Сильная, для кода' },
-      { id: 'DeepSeek-V4-Flash', label: 'DeepSeek V4 Flash', tier: 'deepseek', note: 'Быстрая MoE' },
-      { id: 'DeepSeek-V4-Flash-0731', label: 'DeepSeek V4 Flash (0731)', tier: 'deepseek', note: 'Снапшот 0731' },
-
-      // ── Google ──
-      { id: 'gemini-3-flash', label: 'Gemini 3 Flash', tier: 'google', tools: false, note: 'Быстрая (~17s). Без инструментов' },
-      { id: 'gemini-3-1-pro', label: 'Gemini 3.1 Pro', tier: 'google', tools: false, note: 'Без инструментов, бывает 500/таймаут' },
-      { id: 'gemini-3-pro', label: 'Gemini 3 Pro', tier: 'google', tools: false, note: 'Медленная (до ~74s), бывает 500' },
       { id: 'gemma-4', label: 'Gemma 4', tier: 'google' },
       { id: 'gemma-4-26b', label: 'Gemma 4 26B', tier: 'google' },
-      { id: 'gemma-3-12b', label: 'Gemma 3 12B', tier: 'google', note: 'Лёгкая' },
-      { id: 'gemma-2-2b', label: 'Gemma 2 2B', tier: 'google', note: 'Совсем маленькая' },
-      { id: 'codegemma-7b', label: 'CodeGemma 7B', tier: 'google', note: 'Под код' },
-      { id: 'diffusiongemma-26b', label: 'DiffusionGemma 26B A4B', tier: 'google', note: 'Диффузионная' },
-
-      // ── Qwen ──
-      { id: 'qwen3-coder-480b', label: 'Qwen3 Coder 480B-A35B', tier: 'qwen', note: 'Заточена под код' },
+      { id: 'gemma-3-12b', label: 'Gemma 3 12B', tier: 'google' },
+      { id: 'gemma-2-2b', label: 'Gemma 2 2B', tier: 'google' },
+      { id: 'codegemma-7b', label: 'CodeGemma 7B', tier: 'google' },
+      { id: 'diffusiongemma-26b', label: 'DiffusionGemma 26B A4B', tier: 'google' },
+      { id: 'qwen3-coder-480b', label: 'Qwen3 Coder 480B-A35B', tier: 'qwen' },
       { id: 'qwen3-next-80b', label: 'Qwen3 Next 80B-A3B', tier: 'qwen' },
       { id: 'qwen3.5-122b', label: 'Qwen3.5 122B-A10B', tier: 'qwen' },
-      { id: 'Qwen3.5-397B-A17B', label: 'Qwen3.5 397B-A17B', tier: 'qwen', note: 'Крупная MoE' },
-      { id: 'qwen3.5-397b-alt', label: 'Qwen3.5 397B-A17B · alt', tier: 'qwen', note: 'Крупная MoE' },
-      { id: 'Qwen3.6-35B-A3B', label: 'Qwen3.6 35B-A3B', tier: 'qwen', note: 'Лёгкая MoE' },
+      { id: 'Qwen3.5-397B-A17B', label: 'Qwen3.5 397B-A17B', tier: 'qwen' },
+      { id: 'qwen3.5-397b-alt', label: 'Qwen3.5 397B-A17B alt', tier: 'qwen' },
+      { id: 'Qwen3.6-35B-A3B', label: 'Qwen3.6 35B-A3B', tier: 'qwen' },
       { id: 'qwen2.5', label: 'Qwen2.5', tier: 'qwen' },
-
-      // ── Z-AI ──
-      { id: 'glm-5.2', label: 'GLM 5.2', tier: 'zai', note: 'Топ, но медленная' },
-      { id: 'glm-5.2-alt', label: 'GLM 5.2 · alt', tier: 'zai' },
-      { id: 'glm-5.1', label: 'GLM 5.1', tier: 'zai', note: 'Длинные задачи' },
-      { id: 'glm-5.1-alt', label: 'GLM 5.1 · alt', tier: 'zai' },
-
-      // ── Прочие: роутеры и всё, что не попало в разделы выше ──
-      { id: 'auto', label: 'Auto', tier: 'other', note: 'Роутер: сам выбирает модель', recommended: true },
-      { id: 'step-router-v1', label: 'Step Router v1', tier: 'other', note: 'Роутер step/deepseek' },
-      { id: 'grok-4-5', label: 'Grok 4.5', tier: 'other', tools: false, note: 'Без инструментов (~13–57s)' },
-      { id: 'kat-coder-pro-v2.5', label: 'KAT Coder Pro v2.5', tier: 'other', note: 'Заточена под код' },
+      { id: 'glm-5.2', label: 'GLM 5.2', tier: 'zai' },
+      { id: 'glm-5.2-alt', label: 'GLM 5.2 alt', tier: 'zai' },
+      { id: 'glm-5.1', label: 'GLM 5.1', tier: 'zai' },
+      { id: 'glm-5.1-alt', label: 'GLM 5.1 alt', tier: 'zai' },
+      { id: 'auto', label: 'Auto', tier: 'other', recommended: true },
+      { id: 'step-router-v1', label: 'Step Router v1', tier: 'other' },
+      { id: 'kat-coder-pro-v2.5', label: 'KAT Coder Pro v2.5', tier: 'other' },
       { id: 'Kimi-K2.6', label: 'Kimi K2.6', tier: 'other' },
-      { id: 'MiniMax-M3', label: 'MiniMax M3', tier: 'other', note: 'Мультимодальная' },
-      { id: 'sensenova-6.7-flash-lite', label: 'SenseNova 6.7 Flash Lite', tier: 'other', note: 'Лёгкая' },
+      { id: 'MiniMax-M3', label: 'MiniMax M3', tier: 'other' },
+      { id: 'sensenova-6.7-flash-lite', label: 'SenseNova 6.7 Flash Lite', tier: 'other' },
       { id: 'step-3.7-flash', label: 'Step 3.7 Flash', tier: 'other' },
       { id: 'step-3.5-flash', label: 'Step 3.5 Flash', tier: 'other' },
       { id: 'step-3.5-flash-2603', label: 'Step 3.5 Flash (2603)', tier: 'other' },

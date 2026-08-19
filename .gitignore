@@ -26,6 +26,7 @@ build/
 *.tmp
 *.tgz
 test-models.mjs
+test-seekai.mjs
 
 # серверная часть — держим приватно (публичный репозиторий = только клиент)
 server/

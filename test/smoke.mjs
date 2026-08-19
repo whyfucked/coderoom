@@ -157,7 +157,7 @@ await check('апстримы шлюза: seekai + bluesminds + nvidia (толь
   if (!U.seekai.models.includes('claude-opus-4-7')) throw new Error('seekai без claude-opus-4-7');
   if (!U.seekai.models.includes('claude-opus-4-8')) throw new Error('seekai без claude-opus-4-8');
   if (!U.seekai.models.includes('claude-opus-5')) throw new Error('seekai без claude-opus-5');
-  if (!U.seekai.models.includes('gpt-5.6-sol')) throw new Error('seekai без gpt-5.6-sol');
+  if (!U.seekai.models.includes('gpt-5.6-terra')) throw new Error('seekai без gpt-5.6-terra');
 
   if (U.bluesminds.keyEnv !== 'BLUESMINDS_API_KEY') throw new Error('bluesminds keyEnv: ' + U.bluesminds.keyEnv);
   if (!U.bluesminds.baseUrl.includes('api.bluesminds.com')) throw new Error('bluesminds baseUrl: ' + U.bluesminds.baseUrl);

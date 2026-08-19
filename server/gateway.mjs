@@ -115,11 +115,11 @@ export const GATEWAY_UPSTREAMS = {
     keyEnv: 'SEEKAI_API_KEY',
     userAgent: 'claude-cli/2.0.1 (external, cli)',
     models: [
-      'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-sonnet-5', 'claude-fable-5',
-      'gpt-5-4', 'gpt-5-5', 'gpt-5-6-luna', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5-6-terra',
-      'grok-4-5',
-      'gemini-3-flash', 'gemini-3-1-pro', 'gemini-3-pro',
-      'DeepSeek-V4-Flash-0731',
+      'claude-fable-5', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-sonnet-5',
+      'gpt-5-5', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna',
+      'gemini-3-1-pro', 'gemini-3-flash', 'gemini-3-pro', 'qwen-3-max', 'glm-5-2',
+      'grok-4.5', 'grok-4.6', 'deepseek-v4-flash', 'DeepSeek-V4-Flash-0731',
+      'deepseek-v4-pro', 'deepseek-v4-pro-0813',
     ],
   },
   bluesminds: {
@@ -422,7 +422,7 @@ function routeModel(model, up) {
   if (owners.length) return owners.find((u) => u.apiKeys.length) || owners[0];
 
   const m = id.toLowerCase();
-  if (/^(claude|gpt-5)/.test(m) && up.seekai) return up.seekai;
+  if (/^(claude|gpt-5|gemini|grok|qwen-3-max|glm-5-2|deepseek-v4)/.test(m) && up.seekai) return up.seekai;
   return up.hcnsec || Object.values(up)[0] || null;
 }
 

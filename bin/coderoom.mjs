@@ -86,7 +86,7 @@ function help() {
   ${t.bold('Примеры')}
     ${t.muted('coderoom "добавь тесты для src/utils.js"')}
     ${t.muted('coderoom --plan "как устроена авторизация?"')}
-    ${t.muted('coderoom -m gpt-5.6-sol -d ./backend')}
+    ${t.muted('coderoom -m gpt-5.6-terra -d ./backend')}
 
   ${t.muted('Настройки: ' + CONFIG_FILE)}
 `);
